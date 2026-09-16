@@ -71,9 +71,11 @@ Unit tests do not touch MLX and run in the simulator:
 xcodebuild test -project Lantern.xcodeproj -scheme Lantern -destination 'platform=iOS Simulator,name=iPhone 17' -skipPackagePluginValidation -skipMacroValidation
 ```
 
-The two entitlements in `Lantern.entitlements` (increased memory limit and
-extended virtual addressing) are required for the memory numbers to mean
-anything. Both are ordinary capabilities that automatic signing registers.
+The one entitlement in `Lantern.entitlements`, increased memory limit, is
+required for the memory numbers to mean anything. It is an ordinary capability
+that automatic signing registers and it works on a free Personal Team. Extended
+virtual addressing is left out on purpose: Personal Teams cannot sign it and
+nothing here needs it.
 
 ## Layout
 

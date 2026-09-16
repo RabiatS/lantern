@@ -3,14 +3,16 @@
 <plist version="1.0">
 <dict>
 	<!--
-	A 4-bit 3B model is about 2 GB of weights plus KV cache. iOS kills a
+	A 4-bit 3B model is about 1.8 GB of weights plus KV cache. iOS kills a
 	foreground app at roughly half of physical RAM by default; this raises
-	that ceiling on 6 GB and 8 GB devices. Both are ordinary capabilities,
-	Xcode registers them on the App ID under automatic signing.
+	that ceiling on 6 GB and 8 GB devices. It is an ordinary capability that
+	automatic signing registers, and it works on a free Personal Team.
+
+	Extended Virtual Addressing is deliberately absent: Personal Teams cannot
+	sign it, and nothing in the catalog maps more than the default address
+	space allows.
 	-->
 	<key>com.apple.developer.kernel.increased-memory-limit</key>
-	<true/>
-	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
 	<true/>
 </dict>
 </plist>
