@@ -6,19 +6,27 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppState.self) private var app
     @State private var draft = ""
+    @FocusState private var composing: Bool
 
     var body: some View {
         NavigationStack {
             List {
                 deviceSection
-                liveSection
+                LiveSection()
                 modelsSection
                 benchmarkSection
                 chatSection
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Lantern")
             .toolbar {
-                Button("New chat") { app.newConversation() }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("New chat") { app.newConversation() }
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { composing = false }
+                }
             }
             .safeAreaInset(edge: .bottom) { composer }
         }
@@ -41,16 +49,10 @@ struct RootView: View {
         }
     }
 
-    @ViewBuilder
-    private var liveSection: some View {
-        if let live = app.live {
-            Section("Live") {
-                LabeledContent("Tokens", value: "\(live.tokens)")
-                LabeledContent("Rate", value: String(format: "%.1f tok/s", live.tokensPerSecond))
-                LabeledContent("MLX active", value: gb(live.memory.mlxActive))
-                LabeledContent("MLX peak", value: gb(live.memory.mlxPeak))
-                LabeledContent("App may still use", value: gb(live.memory.available))
-                LabeledContent("Thermal", value: BenchmarkRunner.name(live.memory.thermalState))
+    private var modelsSection: some View {
+        Section("Models") {
+            ForEach(ModelCatalog.all) { entry in
+                ModelRow(entry: entry)
             }
         }
     }
@@ -91,25 +93,10 @@ struct RootView: View {
         }
     }
 
-    private var modelsSection: some View {
-        Section("Models") {
-            ForEach(ModelCatalog.all) { entry in
-                ModelRow(entry: entry)
-            }
-        }
-    }
-
     private var chatSection: some View {
         Section(app.current.title) {
             ForEach(app.current.messages) { message in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(message.role.rawValue).font(.caption).foregroundStyle(.secondary)
-                    Text(message.text.isEmpty ? "…" : message.text)
-                    if let stats = message.stats {
-                        Text(String(format: "%.1f tok/s, %d tokens", stats.tokensPerSecond, stats.generatedTokens))
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
+                MessageRow(message: message)
             }
         }
     }
@@ -118,18 +105,71 @@ struct RootView: View {
         HStack {
             TextField("Say something", text: $draft, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
+                .focused($composing)
+                .submitLabel(.send)
             if app.isGenerating {
                 Button("Stop") { app.stop() }
             } else {
-                Button("Send") {
-                    app.send(draft)
-                    draft = ""
-                }
-                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button("Send") { send() }
+                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding()
         .background(.bar)
+    }
+
+    private func send() {
+        app.send(draft)
+        draft = ""
+    }
+
+    private func gb(_ bytes: Int64) -> String {
+        String(format: "%.2f GB", Double(bytes) / Double(1 << 30))
+    }
+}
+
+/// One message. The row for the reply being written reads the streaming text,
+/// so it is the only row that redraws while tokens arrive.
+private struct MessageRow: View {
+    @Environment(AppState.self) private var app
+    let message: ChatMessage
+
+    var body: some View {
+        let streaming = app.streamingMessageId == message.id
+        let text = streaming ? (app.streamingText ?? "") : message.text
+        VStack(alignment: .leading, spacing: 4) {
+            Text(message.role.rawValue).font(.caption).foregroundStyle(.secondary)
+            if text.isEmpty {
+                Text("…").foregroundStyle(.secondary)
+            } else {
+                Text(MarkdownLite.attributed(text))
+                    .textSelection(.enabled)
+            }
+            if let stats = message.stats {
+                Text(String(format: "%.1f tok/s, %d tokens, first token %.2fs",
+                            stats.tokensPerSecond, stats.generatedTokens, stats.timeToFirstToken))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// The instrument readout. Its own view so the five-times-a-second update
+/// touches this section and nothing else.
+private struct LiveSection: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if let live = app.live {
+            Section("Live") {
+                LabeledContent("Tokens", value: "\(live.tokens)")
+                LabeledContent("Rate", value: String(format: "%.1f tok/s", live.tokensPerSecond))
+                LabeledContent("MLX active", value: gb(live.memory.mlxActive))
+                LabeledContent("MLX peak", value: gb(live.memory.mlxPeak))
+                LabeledContent("App may still use", value: gb(live.memory.available))
+                LabeledContent("Thermal", value: BenchmarkRunner.name(live.memory.thermalState))
+            }
+        }
     }
 
     private func gb(_ bytes: Int64) -> String {

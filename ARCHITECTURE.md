@@ -27,6 +27,15 @@ the entitlement in place, are roughly:
 These are starting assumptions. The first job on a real device is to run the
 benchmark and replace them with measurements.
 
+**Measured so far (16 Sep 2026).** iPhone 17 Pro, 12 GB, iOS 26, signed with
+the increased memory limit entitlement confirmed present in the binary:
+`os_proc_available_memory()` reads 5.95 GB at launch. So the raised limit
+does not scale with RAM past about 6 GB, and a 12 GB phone gives this app the
+same ceiling the table assumes for 8 GB. That makes the 8B tier marginal on
+every phone, not just the 8 GB ones. Llama 3.2 1B on the same phone: 80 to 85
+tokens per second in chat, 68 in the quick benchmark from a cold cache, 60 ms
+to first token, 0.70 GB MLX peak.
+
 ### What a model costs
 
 Three parts: weights, KV cache, scratch.

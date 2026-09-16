@@ -177,7 +177,8 @@ actor InferenceEngine {
             }
             state = .generating(loaded.id)
             let task = Task {
-                defer { self.state = .ready(loaded.id) }
+                // `ready` is set before `finish()` on every path. A consumer that sends
+                // again the instant its loop ends must not find the engine still busy.
                 let started = ContinuousClock.now
                 var firstToken: Duration?
                 var reply = ""
@@ -205,6 +206,7 @@ actor InferenceEngine {
                         self.history.append(.user(prompt))
                         self.history.append(.assistant(reply))
                     }
+                    self.state = .ready(loaded.id)
                     continuation.finish()
                 } catch {
                     // A cancelled or failed turn leaves the session's cache in an
@@ -216,6 +218,7 @@ actor InferenceEngine {
                             self.history.append(.assistant(reply))
                         }
                     }
+                    self.state = .ready(loaded.id)
                     continuation.finish(throwing: error)
                 }
             }

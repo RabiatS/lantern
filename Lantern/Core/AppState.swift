@@ -21,6 +21,10 @@ final class AppState {
     private(set) var unloadedByPressure = false
     /// The instrument readout while a reply streams: tokens so far, rate, memory.
     private(set) var live: LiveStats?
+    /// The reply being written, kept apart from `current.messages` so that each
+    /// token re-renders one row instead of the whole list.
+    private(set) var streamingText: String?
+    private(set) var streamingMessageId: UUID?
     /// Seconds the last weight load took, reported with benchmarks.
     private(set) var lastLoadSeconds: Double = 0
     var persona: Persona = Persona.remembered() {
@@ -171,34 +175,44 @@ final class AppState {
         persist()
         isGenerating = true
 
+        streamingMessageId = assistant.id
+        streamingText = ""
+
         reply = Task {
             defer {
                 isGenerating = false
                 live = nil
+                streamingText = nil
+                streamingMessageId = nil
             }
             do {
                 try await ensureLoaded()
                 var buffer = ""
                 var tokens = 0
                 let started = ContinuousClock.now
-                var lastFlush = started
+                var lastText = started
+                var lastLive = started
                 live = LiveStats(tokens: 0, elapsed: 0, tokensPerSecond: 0, memory: InferenceEngine.memorySnapshot())
                 for try await event in await engine.stream(prompt) {
                     switch event {
                     case .token(let piece):
                         buffer += piece
                         tokens += 1
-                        // Coalesce UI updates to roughly 30 per second.
+                        // Text at about 20 updates a second, the readout at 5. The
+                        // model produces 80 tokens a second; the screen cannot use that.
                         let now = ContinuousClock.now
-                        if now - lastFlush > .milliseconds(33) {
-                            update(assistant.id) { $0.text = buffer }
+                        if now - lastText > .milliseconds(50) {
+                            streamingText = buffer
+                            lastText = now
+                        }
+                        if now - lastLive > .milliseconds(200) {
                             let elapsed = Self.seconds(now - started)
                             live = LiveStats(
                                 tokens: tokens,
                                 elapsed: elapsed,
                                 tokensPerSecond: elapsed > 0 ? Double(tokens) / elapsed : 0,
                                 memory: InferenceEngine.memorySnapshot())
-                            lastFlush = now
+                            lastLive = now
                         }
                     case .finished(let stats):
                         update(assistant.id) { $0.text = buffer; $0.stats = stats }
@@ -207,6 +221,7 @@ final class AppState {
                 update(assistant.id) { $0.text = buffer }
             } catch is CancellationError {
                 // Stopped by the user or by a pressure unload; keep what arrived.
+                if let partial = streamingText { update(assistant.id) { $0.text = partial } }
             } catch {
                 lastError = error.localizedDescription
                 update(assistant.id) { message in
