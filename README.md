@@ -41,13 +41,16 @@ second, memory in use, and the thermal state, live, while it writes.
 
 The system prompt is the one place the app has a point of view, so it is a
 setting. Beyond "general" the personas are the ones that matter with no
-signal: a curious mind for the question you would have searched, roadside
+signal: a curious mind for the question you would have searched, a day out
+helper for lists and errands, a homework tutor, roadside
 helper, first aid guide, outdoors and survival, travel
 phrasebook, a calm companion for waiting it out, field notes that turn a
 rambling note into a list, and an electronics tutor. Each prompt is under a
 hundred words, because a 1B model follows a short brief and every word is
 prefilled on every turn. The safety personas open with "call emergency
-services" and say what serious looks like.
+services", say what serious looks like, and answer from the bundled guides in
+`Lantern/Guides` rather than from the model's memory; each reply names the
+passages it was given.
 
 ## What it is not
 
@@ -124,6 +127,12 @@ knowledge instead of guesses. The notes below grow as the project does.
 - Swift 6.2 concurrency shape that worked: an actor owns the model and its
   session, pure core types are `nonisolated`, heavy work is `@concurrent` so it
   leaves the main actor.
+- A 1B model's own memory of first aid is not something to hand a person in
+  trouble. Retrieval over a few pages of reviewed text, with BM25 plus Apple's
+  on-device sentence embedding, fixes that without any extra download, and the
+  reply can say which passage it came from.
+- Serialise requests to the model; never refuse them. Every "busy" error in an
+  early build was a tap that landed while something else was generating.
 - A free Personal Team can sign the increased memory limit but not extended
   virtual addressing. Nothing here needs the latter.
 - Xcode asks once to trust the build plugin inside `mlx-swift`. From the

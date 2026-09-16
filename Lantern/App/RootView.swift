@@ -42,6 +42,16 @@ struct RootView: View {
             LabeledContent("Tier", value: "\(app.device.tier)")
             LabeledContent("Engine", value: "\(app.engineState)")
             LabeledContent("Ready to go offline", value: app.readyForOffline ? "Yes" : "No")
+            if let context = app.context {
+                LabeledContent("Context", value: "\(context.tokens) of \(context.limit) tokens")
+                if app.isCompacting {
+                    HStack { ProgressView(); Text("Summarising older messages…").font(.caption) }
+                } else if context.isHigh {
+                    Button("Compact now, keep the chat going") { app.compact() }
+                        .font(.caption)
+                        .disabled(app.isBusy)
+                }
+            }
             if !app.readyForOffline {
                 Text("Download a model while you have Wi-Fi. After that the app needs no network.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -52,6 +62,10 @@ struct RootView: View {
             }
             if let error = app.lastError {
                 Text(error).foregroundStyle(.red)
+            }
+            if app.hangs.count > 0 {
+                Text("Main thread stalls this session: \(app.hangs.count), longest \(app.hangs.longestMilliseconds) ms. Logged to Files > Lantern > Diagnostics.")
+                    .font(.caption).foregroundStyle(.orange)
             }
         }
     }
@@ -102,7 +116,7 @@ struct RootView: View {
                 app.send(app.persona.suggestedPrompt)
             }
             .font(.caption)
-            .disabled(app.isGenerating || app.store.installedModel(for: app.selectedEntry) == nil)
+            .disabled(app.isBusy || app.store.installedModel(for: app.selectedEntry) == nil)
         }
     }
 
@@ -121,7 +135,7 @@ struct RootView: View {
                     Button("Sustained 2 min") { app.runBenchmark(.sustained(minutes: 2)) }
                 }
                 .buttonStyle(.bordered)
-                .disabled(app.store.installedModel(for: app.selectedEntry) == nil)
+                .disabled(app.isBusy || app.store.installedModel(for: app.selectedEntry) == nil)
             }
             if let report = app.lastBenchmark {
                 Text(report.note).font(.caption)
@@ -156,7 +170,7 @@ struct RootView: View {
                 Button("Stop") { app.stop() }
             } else {
                 Button("Send") { send() }
-                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(app.isBusy || draft.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding()
@@ -184,11 +198,21 @@ private struct MessageRow: View {
         let text = streaming ? (app.streamingText ?? "") : message.text
         VStack(alignment: .leading, spacing: 4) {
             Text(message.role.rawValue).font(.caption).foregroundStyle(.secondary)
-            if text.isEmpty {
+            if message.role == .system {
+                Text(text).font(.caption).foregroundStyle(.secondary).italic()
+            } else if text.isEmpty {
                 Text("…").foregroundStyle(.secondary)
             } else {
+                // No `.textSelection(.enabled)`: it switches Text to a heavier
+                // path that stutters in long lists. Copy lives in the context menu.
                 Text(MarkdownLite.attributed(text))
-                    .textSelection(.enabled)
+                    .contextMenu {
+                        Button("Copy") { UIPasteboard.general.string = text }
+                    }
+            }
+            if let sources = message.sources, !sources.isEmpty {
+                Text("From the guide: " + sources.joined(separator: ", "))
+                    .font(.caption2).foregroundStyle(.teal)
             }
             if let stats = message.stats {
                 Text(String(format: "%.1f tok/s, %d tokens, first token %.2fs",

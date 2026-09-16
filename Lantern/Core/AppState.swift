@@ -8,6 +8,7 @@ final class AppState {
     let store: ModelStore
     let engine = InferenceEngine()
     let pressure = MemoryPressureMonitor()
+    let hangs = HangMonitor()
     private let conversations: ConversationStore
 
     private(set) var device: DeviceReport
@@ -35,9 +36,18 @@ final class AppState {
     }
     private(set) var benchmarkProgress: String?
     private(set) var lastBenchmark: BenchmarkReport?
+    /// How full the context window is, refreshed after every turn.
+    private(set) var context: ContextUsage?
+    private(set) var isCompacting = false
+
+    /// Anything that has the model's attention: a reply, a benchmark, a compaction.
+    var isBusy: Bool { isGenerating || benchmark != nil || isCompacting }
 
     private var reply: Task<Void, Never>?
     private var benchmark: Task<Void, Never>?
+    /// The bundled guides, built once off the main actor. Nil for the first
+    /// moments after launch, in which case a send goes out ungrounded.
+    private var library: GuideLibrary?
 
     init(store: ModelStore = ModelStore(), conversations: ConversationStore = ConversationStore()) {
         self.store = store
@@ -50,6 +60,15 @@ final class AppState {
         self.history = conversations.loadAll()
         wirePressure()
         pressure.start()
+        hangs.context = { [weak self] in
+            guard let self else { return ("", false, false) }
+            return ("\(self.engineState)", self.isGenerating, self.isCompacting)
+        }
+        hangs.start()
+        Task.detached(priority: .utility) { [weak self] in
+            let library = GuideLibrary()
+            await MainActor.run { self?.library = library }
+        }
     }
 
     // MARK: Device gate
@@ -124,6 +143,15 @@ final class AppState {
         await syncEngineState()
     }
 
+    /// Ask the engine where the context stands. Cheap; called after each turn.
+    private func syncContext() async {
+        context = await engine.loadedEntry == nil ? nil : await engine.contextUsage
+    }
+
+    private static func snapshotOffMain() async -> MemorySnapshot {
+        await Task.detached(priority: .utility) { InferenceEngine.memorySnapshot() }.value
+    }
+
     private static func seconds(_ duration: Duration) -> Double {
         let parts = duration.components
         return Double(parts.seconds) + Double(parts.attoseconds) / 1e18
@@ -131,6 +159,7 @@ final class AppState {
 
     private func syncEngineState() async {
         engineState = await engine.state
+        await syncContext()
     }
 
     // MARK: Conversations
@@ -179,7 +208,7 @@ final class AppState {
 
     func send(_ text: String) {
         let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty, !isGenerating else { return }
+        guard !prompt.isEmpty, !isBusy else { return }
         lastError = nil
         current.messages.append(ChatMessage(role: .user, text: prompt))
         let assistant = ChatMessage(role: .assistant, text: "")
@@ -189,6 +218,8 @@ final class AppState {
 
         streamingMessageId = assistant.id
         streamingText = ""
+        let guide = persona.guide
+        let library = library
 
         reply = Task {
             defer {
@@ -199,13 +230,29 @@ final class AppState {
             }
             do {
                 try await ensureLoaded()
+                // Near the end of the window, fold the older turns into a summary
+                // first, so the person does not have to start a new chat.
+                if let context, context.isCritical {
+                    await compactNow()
+                }
+                // Grounding: the safety personas answer from the bundled guide.
+                // Retrieval is a few milliseconds of BM25 plus one sentence
+                // embedding, off the main actor.
+                var modelPrompt = prompt
+                if let guide, let library {
+                    let hits = await Task.detached { library.retrieve(prompt, in: guide) }.value
+                    if !hits.isEmpty {
+                        modelPrompt = GuideLibrary.groundedPrompt(question: prompt, passages: hits)
+                        update(assistant.id) { $0.sources = hits.map(\.passage.title) }
+                    }
+                }
                 var buffer = ""
                 var tokens = 0
                 let started = ContinuousClock.now
                 var lastText = started
                 var lastLive = started
-                live = LiveStats(tokens: 0, elapsed: 0, tokensPerSecond: 0, memory: InferenceEngine.memorySnapshot())
-                for try await event in await engine.stream(prompt) {
+                live = LiveStats(tokens: 0, elapsed: 0, tokensPerSecond: 0, memory: await Self.snapshotOffMain())
+                for try await event in await engine.stream(modelPrompt) {
                     switch event {
                     case .token(let piece):
                         buffer += piece
@@ -217,13 +264,16 @@ final class AppState {
                             streamingText = buffer
                             lastText = now
                         }
-                        if now - lastLive > .milliseconds(200) {
+                        if now - lastLive > .milliseconds(250) {
                             let elapsed = Self.seconds(now - started)
+                            // MLX's memory counters take the allocator lock; never
+                            // wait for that on the main thread.
+                            let memory = await Self.snapshotOffMain()
                             live = LiveStats(
                                 tokens: tokens,
                                 elapsed: elapsed,
                                 tokensPerSecond: elapsed > 0 ? Double(tokens) / elapsed : 0,
-                                memory: InferenceEngine.memorySnapshot())
+                                memory: memory)
                             lastLive = now
                         }
                     case .finished(let stats):
@@ -248,6 +298,34 @@ final class AppState {
     func stop() {
         reply?.cancel()
         Task { await engine.cancelGeneration() }
+    }
+
+    // MARK: Compaction
+
+    /// Fold everything but the last two turns into a summary and keep going.
+    /// The full transcript stays on disk; a system line in the chat marks where
+    /// the summary took over.
+    func compact() {
+        guard !isBusy, context?.tokens ?? 0 > 0 else { return }
+        Task { await compactNow() }
+    }
+
+    private func compactNow() async {
+        isCompacting = true
+        defer { isCompacting = false }
+        do {
+            try await ensureLoaded()
+            let summary = try await engine.compact()
+            current.messages.append(ChatMessage(
+                role: .system,
+                text: "Older messages were summarised to keep the conversation going: " + summary))
+            persist()
+        } catch EngineError.nothingToCompact {
+            // Too short to matter; the rotating cache handles it.
+        } catch {
+            lastError = error.localizedDescription
+        }
+        await syncEngineState()
     }
 
     private func update(_ id: UUID, _ change: (inout ChatMessage) -> Void) {

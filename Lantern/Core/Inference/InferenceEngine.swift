@@ -27,14 +27,26 @@ nonisolated struct MemorySnapshot: Sendable, Equatable {
     let thermalState: ProcessInfo.ThermalState
 }
 
+/// How full the conversation's context window is.
+nonisolated struct ContextUsage: Sendable, Equatable {
+    let tokens: Int
+    let limit: Int
+
+    var fraction: Double { limit > 0 ? Double(tokens) / Double(limit) : 0 }
+    /// Worth offering the user a compaction.
+    var isHigh: Bool { fraction >= 0.6 }
+    /// Compact before the next turn or the oldest context starts falling out.
+    var isCritical: Bool { fraction >= 0.85 }
+}
+
 nonisolated enum EngineError: LocalizedError {
     case noModelLoaded
-    case busy
+    case nothingToCompact
 
     var errorDescription: String? {
         switch self {
         case .noModelLoaded: "No model is loaded."
-        case .busy: "A reply is still being written."
+        case .nothingToCompact: "The conversation is too short to compact."
         }
     }
 }
@@ -47,6 +59,10 @@ nonisolated enum EngineError: LocalizedError {
 /// follow-up turn cheap, and as a plain message list, which is what survives when
 /// memory pressure throws the cache away. Dropping the context is just `session = nil`;
 /// the next turn rebuilds it from the list with one prefill.
+///
+/// Requests are serialised: a new one cancels and waits for the one in flight.
+/// The previous design refused with "busy", which surfaced as a lost reply any
+/// time a tap landed while the benchmark or a stale turn was still running.
 actor InferenceEngine {
     enum State: Equatable, Sendable {
         case empty
@@ -63,8 +79,13 @@ actor InferenceEngine {
     private var instructions: String?
     private var history: [Chat.Message] = []
     private var generation: Task<Void, Never>?
+    private(set) var contextTokens = 0
 
     var loadedEntry: ModelEntry? { loaded }
+
+    var contextUsage: ContextUsage {
+        ContextUsage(tokens: contextTokens, limit: InferenceLimits.maxKVTokens(for: tier))
+    }
 
     /// Read weights from disk into unified memory. Two to five seconds for a 3B model.
     func load(_ entry: ModelEntry, from directory: URL, tier: DeviceTier) async throws {
@@ -115,7 +136,7 @@ actor InferenceEngine {
 
     /// Start (or restart) a conversation. Past turns are prefilled on the first
     /// send rather than now.
-    func beginConversation(instructions: String?, history: [ChatMessage]) throws {
+    func beginConversation(instructions: String?, history: [ChatMessage]) async throws {
         guard container != nil else { throw EngineError.noModelLoaded }
         self.instructions = instructions
         self.history = history.compactMap { message in
@@ -126,6 +147,7 @@ actor InferenceEngine {
             }
         }
         session = nil
+        await recountContext()
     }
 
     static func generateParameters(for tier: DeviceTier) -> GenerateParameters {
@@ -152,7 +174,7 @@ actor InferenceEngine {
     }
 
     /// Generate once against a fresh session, outside the conversation. Used by
-    /// the benchmark so each prompt starts from an empty KV cache.
+    /// the benchmark and by compaction so each request starts from an empty KV cache.
     func generateOnce(_ prompt: String, maxTokens: Int) -> AsyncThrowingStream<GenerationEvent, Error> {
         guard let container else {
             return AsyncThrowingStream { $0.finish(throwing: EngineError.noModelLoaded) }
@@ -171,18 +193,20 @@ actor InferenceEngine {
                 continuation.finish(throwing: EngineError.noModelLoaded)
                 return
             }
-            if case .generating = state {
-                continuation.finish(throwing: EngineError.busy)
-                return
-            }
+            let previous = generation
             state = .generating(loaded.id)
             let task = Task {
-                // `ready` is set before `finish()` on every path. A consumer that sends
-                // again the instant its loop ends must not find the engine still busy.
+                // One request at a time. Whatever was running is cancelled and
+                // allowed to wind down before this one touches the model.
+                if let previous {
+                    previous.cancel()
+                    await previous.value
+                }
                 let started = ContinuousClock.now
                 var firstToken: Duration?
                 var reply = ""
                 do {
+                    try Task.checkCancellation()
                     for try await event in session.streamDetails(to: prompt) {
                         switch event {
                         case .chunk(let text):
@@ -205,8 +229,9 @@ actor InferenceEngine {
                     if recordInHistory {
                         self.history.append(.user(prompt))
                         self.history.append(.assistant(reply))
+                        await self.recountContext()
                     }
-                    self.state = .ready(loaded.id)
+                    self.finishGeneration(loaded)
                     continuation.finish()
                 } catch {
                     // A cancelled or failed turn leaves the session's cache in an
@@ -216,9 +241,10 @@ actor InferenceEngine {
                         if !reply.isEmpty {
                             self.history.append(.user(prompt))
                             self.history.append(.assistant(reply))
+                            await self.recountContext()
                         }
                     }
-                    self.state = .ready(loaded.id)
+                    self.finishGeneration(loaded)
                     continuation.finish(throwing: error)
                 }
             }
@@ -227,8 +253,67 @@ actor InferenceEngine {
         }
     }
 
+    /// Back to ready, unless a newer request has already taken over or the
+    /// model was unloaded underneath us.
+    private func finishGeneration(_ entry: ModelEntry) {
+        guard loaded == entry, case .generating = state else { return }
+        state = .ready(entry.id)
+    }
+
     func cancelGeneration() {
         generation?.cancel()
+    }
+
+    // MARK: Context
+
+    /// Tokens the conversation occupies, measured with the real tokenizer so the
+    /// number means the same thing the KV cache limit does.
+    private func recountContext() async {
+        guard let container else {
+            contextTokens = 0
+            return
+        }
+        let transcript = ([instructions ?? ""] + history.map { "\($0.role.rawValue): \($0.content)" })
+            .joined(separator: "\n")
+        contextTokens = await container.encode(transcript).count
+    }
+
+    /// Summarise everything but the last two turns and continue from the summary.
+    /// The KV cache is dropped; the next send prefills the summary plus the
+    /// recent turns, which is far cheaper than the window it replaces. Returns
+    /// the summary for the caller to show.
+    func compact() async throws -> String {
+        guard container != nil else { throw EngineError.noModelLoaded }
+        let keep = 4
+        guard history.count > keep + 1 else { throw EngineError.nothingToCompact }
+        let older = history.prefix(history.count - keep)
+        let recent = Array(history.suffix(keep))
+
+        let transcript = older
+            .map { "\($0.role.rawValue.capitalized): \($0.content)" }
+            .joined(separator: "\n\n")
+        let request = """
+            Summarise the conversation below in under 150 words so that it can be continued later. \
+            Keep every name, number, decision and open question exactly as stated. Write in the third person. \
+            Reply with the summary only.
+
+            \(transcript)
+            """
+        var summary = ""
+        for try await event in generateOnce(request, maxTokens: 220) {
+            if case .token(let text) = event { summary += text }
+        }
+        summary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !summary.isEmpty else { throw EngineError.nothingToCompact }
+
+        history = [
+            .user("Here is a summary of our conversation so far, so we can continue it: \(summary)"),
+            .assistant("Understood. Let's continue from there."),
+        ] + recent
+        session = nil
+        Memory.clearCache()
+        await recountContext()
+        return summary
     }
 
     private static func seconds(_ duration: Duration) -> Double {

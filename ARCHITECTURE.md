@@ -128,7 +128,9 @@ one without the other. The bridge from `Tokenizers.Tokenizer` to
 the build.
 
 **InferenceEngine** is an actor around a `ModelContainer` and one
-`ChatSession`. Load builds a `ResolvedModelConfiguration` pointing at the
+`ChatSession`. Requests are serialised: a new one cancels the one in flight
+and waits for it to wind down, which replaced an earlier "busy" refusal that
+lost replies whenever a tap landed during a benchmark. Load builds a `ResolvedModelConfiguration` pointing at the
 local folder and calls the factory directly, so no downloader is involved at
 load time. The session keeps the conversation's KV cache between turns, so a
 follow-up question does not re-prefill the whole transcript. `stream` yields
@@ -137,6 +139,34 @@ time to first token. `generateOnce` runs against a throwaway session for the
 benchmark. Generation parameters come from the tier: the KV window is 2048,
 4096 or 8192 tokens through `maxKVSize`, which makes MLX use a rotating cache
 so a long chat cannot grow without bound.
+
+**GuideLibrary** grounds the safety personas. Three reviewed texts ship in
+the app bundle (first aid, roadside, outdoors), split into passages at their
+headings. On every send from one of those personas the question is scored
+against the passages with BM25 over stemmed words, heading words counted three
+times, plus Apple's on-device sentence embedding from the NaturalLanguage
+framework for meaning when the words differ. The top three passages go into
+the prompt ahead of the question with an instruction to answer only from them
+and to say so when they do not cover the case. The reply shows which passages
+it was given. Nothing is downloaded for this and the whole index is built once
+at launch off the main actor. The upgrade path, if retrieval quality ever
+needs it, is the embedders in mlx-swift-lm; the corpus is small enough that
+it has not.
+
+**Compaction** keeps a long chat alive. The engine measures the conversation
+with the real tokenizer after every turn. Past sixty percent of the KV window
+the screen offers a compaction; past eighty five percent the next send does one
+first. Compaction asks the model for a summary of everything but the last two
+turns, then continues from the summary plus those turns with a fresh cache. The
+full transcript stays on disk and a system line in the chat marks where the
+summary took over. Without this the rotating cache drops the oldest tokens
+silently, which is survivable but loses the beginning of the conversation.
+
+**HangMonitor** is a fifty millisecond timer on the main run loop. When it
+fires late by more than a quarter second, that gap was a stall, and it is
+written to `Documents/Diagnostics/hangs.jsonl` with the engine state and
+whether a reply or a compaction was running. It exists because "it freezes
+sometimes" needs a timestamp before it can be fixed.
 
 **MemoryPressureMonitor** listens to two signals because they mean different
 things. `UIApplication.didReceiveMemoryWarningNotification` is the system
