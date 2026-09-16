@@ -25,4 +25,24 @@ struct ConversationStoreTests {
         try store.delete(older.id)
         #expect(store.loadAll().map(\.id) == [newer.id])
     }
+
+    @Test func purgeDeletesOnlyConversationsOlderThanSevenDays() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "lantern-purge-\(UUID().uuidString)")
+        let store = ConversationStore(directory: dir)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let now = Date()
+        var stale = Conversation(modelId: ModelCatalog.defaultEntry.id)
+        stale.updatedAt = now.addingTimeInterval(-8 * 86_400)
+        var fresh = Conversation(modelId: ModelCatalog.defaultEntry.id)
+        fresh.updatedAt = now.addingTimeInterval(-6 * 86_400)
+        try store.save(stale)
+        try store.save(fresh)
+
+        #expect(ConversationStore.expiry(of: fresh) > now)
+        #expect(store.purgeExpired(now: now) == 1)
+        #expect(store.loadAll().map(\.id) == [fresh.id])
+        #expect(store.purgeExpired(now: now.addingTimeInterval(2 * 86_400)) == 1)
+        #expect(store.loadAll().isEmpty)
+    }
 }

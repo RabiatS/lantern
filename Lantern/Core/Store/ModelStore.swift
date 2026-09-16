@@ -38,19 +38,28 @@ final class ModelStore {
         case notInstalled
         case fetchingManifest
         case downloading(written: Int64, total: Int64, file: String)
+        /// Wi-Fi only is on and the phone is not on Wi-Fi. The download starts by itself when it is.
+        case waitingForNetwork(file: String)
         case verifying(file: String)
         case installed(InstalledModel)
         case failed(String)
 
         var isBusy: Bool {
             switch self {
-            case .fetchingManifest, .downloading, .verifying: true
+            case .fetchingManifest, .downloading, .waitingForNetwork, .verifying: true
             default: false
             }
         }
     }
 
     private(set) var status: [String: Status] = [:]
+
+    /// Weights are a gigabyte or four. Default to Wi-Fi so nobody spends their
+    /// data plan by accident; the download waits for Wi-Fi rather than failing.
+    var wifiOnly: Bool = UserDefaults.standard.object(forKey: ModelStore.wifiOnlyKey) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(wifiOnly, forKey: Self.wifiOnlyKey) }
+    }
+    private static let wifiOnlyKey = "lantern.wifiOnly"
 
     let root: URL
     private let hub: HuggingFaceHub
@@ -115,13 +124,15 @@ final class ModelStore {
         let directory = directory(for: entry)
         let hub = hub
         let id = entry.id
+        let allowsCellular = !wifiOnly
         let report: @Sendable (Status) -> Void = { [weak self] update in
             Task { @MainActor [weak self] in self?.status[id] = update }
         }
         tasks[id] = Task { [weak self] in
             do {
                 let installed = try await Self.performInstall(
-                    entry: entry, directory: directory, hub: hub, report: report)
+                    entry: entry, directory: directory, hub: hub,
+                    allowsCellular: allowsCellular, report: report)
                 self?.status[id] = .installed(installed)
             } catch is CancellationError {
                 self?.status[id] = .notInstalled
@@ -158,6 +169,7 @@ final class ModelStore {
         entry: ModelEntry,
         directory: URL,
         hub: HuggingFaceHub,
+        allowsCellular: Bool,
         report: @Sendable @escaping (Status) -> Void
     ) async throws -> InstalledModel {
         let manifest = try await hub.manifest(for: entry.id)
@@ -190,8 +202,11 @@ final class ModelStore {
             let base = doneBytes
             report(.downloading(written: base, total: total, file: file.path))
 
-            let downloaded = try await FileDownloader().download(url, resumeDataURL: resume) { written, _ in
+            let downloader = FileDownloader(allowsCellular: allowsCellular)
+            let downloaded = try await downloader.download(url, resumeDataURL: resume) { written, _ in
                 report(.downloading(written: base + written, total: total, file: file.path))
+            } waiting: {
+                report(.waitingForNetwork(file: file.path))
             }
 
             report(.verifying(file: file.path))

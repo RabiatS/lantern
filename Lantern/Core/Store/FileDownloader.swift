@@ -16,33 +16,45 @@ nonisolated enum DownloadError: LocalizedError {
 /// asks the system for resume data, which is written next to the destination so
 /// the next attempt continues where this one stopped.
 ///
+/// With `allowsCellular` false the session waits for Wi-Fi rather than failing:
+/// the download starts when the phone is back on a network it is allowed to use,
+/// and the `waiting` callback lets the UI say so.
+///
 /// One instance per file: it owns a URLSession whose delegate is itself, and
 /// invalidates that session when the download ends.
 nonisolated final class FileDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     typealias Progress = @Sendable (_ written: Int64, _ expected: Int64) -> Void
+    typealias Waiting = @Sendable () -> Void
 
     private let lock = NSLock()
     private var session: URLSession!
     private var continuation: CheckedContinuation<URL, Error>?
     private var progress: Progress?
+    private var waiting: Waiting?
     private var resumeDataURL: URL?
     private var task: URLSessionDownloadTask?
     private var finishedURL: URL?
 
-    override init() {
+    init(allowsCellular: Bool) {
         super.init()
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = true
+        configuration.allowsCellularAccess = allowsCellular
+        // A personal hotspot is "expensive"; treat it like cellular.
+        configuration.allowsExpensiveNetworkAccess = allowsCellular
         configuration.timeoutIntervalForRequest = 60
-        configuration.timeoutIntervalForResource = 6 * 60 * 60
+        configuration.timeoutIntervalForResource = 24 * 60 * 60
         session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }
 
     /// Returns a temporary file the caller must move or delete.
-    func download(_ url: URL, resumeDataURL: URL, progress: @escaping Progress) async throws -> URL {
+    func download(
+        _ url: URL, resumeDataURL: URL,
+        progress: @escaping Progress, waiting: @escaping Waiting = {}
+    ) async throws -> URL {
         defer { session.finishTasksAndInvalidate() }
         do {
-            return try await start(url, resumeDataURL: resumeDataURL, progress: progress)
+            return try await start(url, resumeDataURL: resumeDataURL, progress: progress, waiting: waiting)
         } catch {
             // URLSession reports our own cancellation as URLError.cancelled. The
             // caller wants the Swift kind so it can tell "stopped" from "failed".
@@ -51,7 +63,9 @@ nonisolated final class FileDownloader: NSObject, URLSessionDownloadDelegate, @u
         }
     }
 
-    private func start(_ url: URL, resumeDataURL: URL, progress: @escaping Progress) async throws -> URL {
+    private func start(
+        _ url: URL, resumeDataURL: URL, progress: @escaping Progress, waiting: @escaping Waiting
+    ) async throws -> URL {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let task: URLSessionDownloadTask
@@ -63,6 +77,7 @@ nonisolated final class FileDownloader: NSObject, URLSessionDownloadDelegate, @u
                 lock.withLock {
                     self.continuation = continuation
                     self.progress = progress
+                    self.waiting = waiting
                     self.resumeDataURL = resumeDataURL
                     self.task = task
                 }
@@ -79,6 +94,11 @@ nonisolated final class FileDownloader: NSObject, URLSessionDownloadDelegate, @u
     }
 
     // MARK: URLSessionDownloadDelegate
+
+    func urlSession(_ session: URLSession, taskIsWaitingForConnectivity task: URLSessionTask) {
+        let waiting = lock.withLock { self.waiting }
+        waiting?()
+    }
 
     func urlSession(
         _ session: URLSession, downloadTask: URLSessionDownloadTask,

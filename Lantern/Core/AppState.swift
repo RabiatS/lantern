@@ -46,6 +46,7 @@ final class AppState {
         let entry = Self.rememberedEntry() ?? ModelCatalog.defaultEntry
         self.selectedEntry = entry
         self.current = Conversation(modelId: entry.id)
+        conversations.purgeExpired()
         self.history = conversations.loadAll()
         wirePressure()
         pressure.start()
@@ -64,6 +65,17 @@ final class AppState {
     /// Models this phone may run, in catalog order.
     var offeredEntries: [ModelEntry] {
         ModelCatalog.entries(for: device.tier)
+    }
+
+    /// The thing to check before leaving Wi-Fi: is the chosen model on the phone.
+    var readyForOffline: Bool {
+        store.installedModel(for: selectedEntry) != nil
+    }
+
+    /// Days until a conversation is deleted, rounded up. Zero means today.
+    func daysLeft(for conversation: Conversation) -> Int {
+        let seconds = ConversationStore.expiry(of: conversation).timeIntervalSinceNow
+        return max(0, Int((seconds / 86_400).rounded(.up)))
     }
 
     // MARK: Model selection
@@ -272,8 +284,12 @@ final class AppState {
             Task { await self.engine.dropContext() }
         }
         pressure.onForeground = { [weak self] in
-            self?.refreshDevice()
-            self?.pressure.clear()
+            guard let self else { return }
+            self.refreshDevice()
+            self.pressure.clear()
+            if self.conversations.purgeExpired() > 0 {
+                self.history = self.conversations.loadAll()
+            }
         }
     }
 
@@ -329,42 +345,4 @@ nonisolated struct LiveStats: Sendable, Equatable {
     let elapsed: Double
     let tokensPerSecond: Double
     let memory: MemorySnapshot
-}
-
-/// What the assistant is for. The system prompt is the one place the app has a
-/// point of view, so it is a setting rather than a constant.
-nonisolated enum Persona: String, CaseIterable, Codable, Sendable {
-    case general
-    case electronicsTutor
-
-    var title: String {
-        switch self {
-        case .general: "General"
-        case .electronicsTutor: "Electronics tutor"
-        }
-    }
-
-    var instructions: String {
-        switch self {
-        case .general:
-            "You are a helpful assistant running entirely on this phone, with no internet. Be concise."
-        case .electronicsTutor:
-            "You are a patient electronics tutor running entirely on this phone, with no internet. "
-                + "Teach circuits, components and measurement the way a good lab partner would: ask what "
-                + "the learner has on the bench, work in SI units, show the arithmetic, and warn about "
-                + "mains voltage and charged capacitors before anything else. Keep answers short and "
-                + "end with one question that checks understanding."
-        }
-    }
-
-    private static let key = "lantern.persona"
-
-    static func remembered() -> Persona {
-        guard let raw = UserDefaults.standard.string(forKey: key) else { return .general }
-        return Persona(rawValue: raw) ?? .general
-    }
-
-    func remember() {
-        UserDefaults.standard.set(rawValue, forKey: Self.key)
-    }
 }

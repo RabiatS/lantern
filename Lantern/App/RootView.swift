@@ -14,8 +14,10 @@ struct RootView: View {
                 deviceSection
                 LiveSection()
                 modelsSection
+                personaSection
                 benchmarkSection
                 chatSection
+                historySection
             }
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Lantern")
@@ -39,6 +41,11 @@ struct RootView: View {
             LabeledContent("Free disk", value: gb(app.device.freeDisk))
             LabeledContent("Tier", value: "\(app.device.tier)")
             LabeledContent("Engine", value: "\(app.engineState)")
+            LabeledContent("Ready to go offline", value: app.readyForOffline ? "Yes" : "No")
+            if !app.readyForOffline {
+                Text("Download a model while you have Wi-Fi. After that the app needs no network.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if app.unloadedByPressure {
                 Text("Model was unloaded under memory pressure. It reloads on the next send.")
                     .foregroundStyle(.orange)
@@ -51,18 +58,56 @@ struct RootView: View {
 
     private var modelsSection: some View {
         Section("Models") {
+            @Bindable var store = app.store
+            Toggle("Download on Wi-Fi only", isOn: $store.wifiOnly)
             ForEach(ModelCatalog.all) { entry in
                 ModelRow(entry: entry)
             }
         }
     }
 
-    private var benchmarkSection: some View {
-        Section("Benchmark") {
+    @ViewBuilder
+    private var historySection: some View {
+        let past = app.history.filter { $0.id != app.current.id }
+        if !past.isEmpty {
+            Section("History, kept \(ConversationStore.retentionDays) days") {
+                ForEach(past) { conversation in
+                    Button {
+                        app.open(conversation)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(conversation.title)
+                            Text("\(conversation.messages.count) messages, deletes in \(app.daysLeft(for: conversation)) days")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    .tint(.primary)
+                }
+                .onDelete { offsets in
+                    for index in offsets { app.delete(past[index]) }
+                }
+            }
+        }
+    }
+
+    private var personaSection: some View {
+        Section("Persona") {
             @Bindable var app = app
             Picker("Persona", selection: $app.persona) {
                 ForEach(Persona.allCases, id: \.self) { Text($0.title).tag($0) }
             }
+            Text(app.persona.summary).font(.caption).foregroundStyle(.secondary)
+            Button("Try: \(app.persona.suggestedPrompt)") {
+                app.newConversation()
+                app.send(app.persona.suggestedPrompt)
+            }
+            .font(.caption)
+            .disabled(app.isGenerating || app.store.installedModel(for: app.selectedEntry) == nil)
+        }
+    }
+
+    private var benchmarkSection: some View {
+        Section("Benchmark") {
             if let progress = app.benchmarkProgress {
                 HStack {
                     ProgressView()
@@ -235,6 +280,8 @@ private struct ModelRow: View {
             ProgressView(value: Double(written), total: Double(max(total, 1))) {
                 Text(file).font(.caption2)
             }
+        case .waitingForNetwork(let file):
+            Text("Waiting for Wi-Fi to fetch \(file)…").font(.caption).foregroundStyle(.orange)
         case .verifying(let file):
             Text("Verifying \(file)…").font(.caption)
         case .installed(let model):

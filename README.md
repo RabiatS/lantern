@@ -32,6 +32,22 @@ second, memory in use, and the thermal state, live, while it writes.
   token, decode rate, peak memory, and a two minute sustained run sampled every
   ten seconds with the thermal state, written to Files as JSON and CSV.
 - **Unlimited use.** Nothing is metered, because nothing leaves the phone.
+- **Built for leaving Wi-Fi.** Downloads are Wi-Fi only by default and wait
+  for it rather than fail. The main screen says whether the phone is ready to
+  go offline. Chats are kept for seven days from their last message, then
+  deleted; nothing accumulates.
+
+## Personas
+
+The system prompt is the one place the app has a point of view, so it is a
+setting. Beyond "general" the personas are the ones that matter with no
+signal: a curious mind for the question you would have searched, roadside
+helper, first aid guide, outdoors and survival, travel
+phrasebook, a calm companion for waiting it out, field notes that turn a
+rambling note into a list, and an electronics tutor. Each prompt is under a
+hundred words, because a 1B model follows a short brief and every word is
+prefilled on every turn. The safety personas open with "call emergency
+services" and say what serious looks like.
 
 ## What it is not
 
