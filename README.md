@@ -77,6 +77,61 @@ that automatic signing registers and it works on a free Personal Team. Extended
 virtual addressing is left out on purpose: Personal Teams cannot sign it and
 nothing here needs it.
 
+## Why this exists
+
+This is a learning project: figure out how on-device ML actually behaves with
+MLX on a phone, with real numbers, so that the next prototype starts from
+knowledge instead of guesses. The notes below grow as the project does.
+
+## Learnings so far
+
+- The LLM libraries live in `mlx-swift-lm` now, not `mlx-swift-examples`. The
+  tokenizer and downloader are separate packages you bring yourself.
+- MLX does not run in the iOS Simulator. Plan on a real phone from day one and
+  keep unit tests free of MLX so they can still run on the Mac.
+- The memory ceiling is not RAM. With the increased memory limit entitlement, a
+  12 GB iPhone 17 Pro still gives the app about 6 GB. Read
+  `os_proc_available_memory()` and believe it.
+- Weights are half the story. The KV cache costs
+  layers x kv_heads x head_dim x 4 bytes per token of context, and a model
+  without grouped-query attention (Phi 3.5 mini) pays three times more than
+  one with it (Llama 3B).
+- A 1B model at 4-bit is genuinely fast: 80 to 85 tokens per second and 60 ms to
+  first token on an iPhone 17 Pro, in 0.7 GB.
+- Qwen 2.5 1.5B answers noticeably better than Llama 3.2 1B for 170 MB more on
+  disk and the same speed class. Newer training data matters more than
+  parameter count at this size.
+- Small models loop, invent, and forget. Treat them as a writing and explaining
+  partner, not a reference, and keep the context window bounded.
+- SwiftUI cannot draw 80 tokens a second. Batch text updates to about 20 a
+  second and make the streaming row the only view that redraws.
+- Swift 6.2 concurrency shape that worked: an actor owns the model and its
+  session, pure core types are `nonisolated`, heavy work is `@concurrent` so it
+  leaves the main actor.
+- A free Personal Team can sign the increased memory limit but not extended
+  virtual addressing. Nothing here needs the latter.
+- Xcode asks once to trust the build plugin inside `mlx-swift`. From the
+  command line pass `-skipPackagePluginValidation`.
+
+## What a model this size can do on a phone
+
+Things a 1B to 3B model handles well enough to build on, all offline:
+
+- Summarise or rewrite text the user already has: notes, messages, a pasted
+  article, a voice memo transcript from the Speech framework.
+- Draft and adjust tone: a reply, a caption, a shorter version of a paragraph.
+- Explain and tutor within a subject the system prompt sets, like the
+  electronics persona here.
+- Pull structure out of text: dates, amounts, names, a to-do list from a
+  rambling note.
+- Classify and tag: is this message urgent, which folder does this photo
+  caption belong in, what language is this.
+- Answer questions over text you hand it in the prompt. Retrieval over the
+  user's own documents is the natural next layer.
+
+Things it is not for: current facts, long documents beyond the context window,
+anything where a wrong answer costs more than a retry.
+
 ## Layout
 
 ```
