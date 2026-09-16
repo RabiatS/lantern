@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	A 4-bit 3B model is about 2 GB of weights plus KV cache. iOS kills a
+	foreground app at roughly half of physical RAM by default; this raises
+	that ceiling on 6 GB and 8 GB devices. Both are ordinary capabilities,
+	Xcode registers them on the App ID under automatic signing.
+	-->
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
+	<true/>
+</dict>
+</plist>

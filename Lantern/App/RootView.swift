@@ -1,0 +1,206 @@
+import SwiftUI
+
+/// A bare working screen so the backend can be exercised on a device before any
+/// design work: the device verdict, model install and load, and a streaming reply.
+/// The real UI replaces this file.
+struct RootView: View {
+    @Environment(AppState.self) private var app
+    @State private var draft = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                deviceSection
+                liveSection
+                modelsSection
+                benchmarkSection
+                chatSection
+            }
+            .navigationTitle("Lantern")
+            .toolbar {
+                Button("New chat") { app.newConversation() }
+            }
+            .safeAreaInset(edge: .bottom) { composer }
+        }
+    }
+
+    private var deviceSection: some View {
+        Section("This phone") {
+            LabeledContent("Memory", value: gb(app.device.physicalMemory))
+            LabeledContent("Available now", value: gb(app.device.availableMemory))
+            LabeledContent("Free disk", value: gb(app.device.freeDisk))
+            LabeledContent("Tier", value: "\(app.device.tier)")
+            LabeledContent("Engine", value: "\(app.engineState)")
+            if app.unloadedByPressure {
+                Text("Model was unloaded under memory pressure. It reloads on the next send.")
+                    .foregroundStyle(.orange)
+            }
+            if let error = app.lastError {
+                Text(error).foregroundStyle(.red)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var liveSection: some View {
+        if let live = app.live {
+            Section("Live") {
+                LabeledContent("Tokens", value: "\(live.tokens)")
+                LabeledContent("Rate", value: String(format: "%.1f tok/s", live.tokensPerSecond))
+                LabeledContent("MLX active", value: gb(live.memory.mlxActive))
+                LabeledContent("MLX peak", value: gb(live.memory.mlxPeak))
+                LabeledContent("App may still use", value: gb(live.memory.available))
+                LabeledContent("Thermal", value: BenchmarkRunner.name(live.memory.thermalState))
+            }
+        }
+    }
+
+    private var benchmarkSection: some View {
+        Section("Benchmark") {
+            @Bindable var app = app
+            Picker("Persona", selection: $app.persona) {
+                ForEach(Persona.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            if let progress = app.benchmarkProgress {
+                HStack {
+                    ProgressView()
+                    Text(progress)
+                    Spacer()
+                    Button("Stop") { app.stopBenchmark() }
+                }
+            } else {
+                HStack {
+                    Button("Quick") { app.runBenchmark(.quick) }
+                    Button("Sustained 2 min") { app.runBenchmark(.sustained(minutes: 2)) }
+                }
+                .buttonStyle(.bordered)
+                .disabled(app.store.installedModel(for: app.selectedEntry) == nil)
+            }
+            if let report = app.lastBenchmark {
+                Text(report.note).font(.caption)
+                if let first = report.samples.first {
+                    Text(String(format: "TTFT %.2fs, %.1f tok/s, peak %@", first.timeToFirstToken, first.tokensPerSecond, gb(first.mlxPeakBytes)))
+                        .font(.caption)
+                }
+                if let last = report.sustained.last {
+                    Text(String(format: "Last window %.1f tok/s, thermal %@", last.tokensPerSecond, last.thermalState))
+                        .font(.caption)
+                }
+                Text("Saved to Files > Lantern > Benchmarks").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var modelsSection: some View {
+        Section("Models") {
+            ForEach(ModelCatalog.all) { entry in
+                ModelRow(entry: entry)
+            }
+        }
+    }
+
+    private var chatSection: some View {
+        Section(app.current.title) {
+            ForEach(app.current.messages) { message in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(message.role.rawValue).font(.caption).foregroundStyle(.secondary)
+                    Text(message.text.isEmpty ? "…" : message.text)
+                    if let stats = message.stats {
+                        Text(String(format: "%.1f tok/s, %d tokens", stats.tokensPerSecond, stats.generatedTokens))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var composer: some View {
+        HStack {
+            TextField("Say something", text: $draft, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+            if app.isGenerating {
+                Button("Stop") { app.stop() }
+            } else {
+                Button("Send") {
+                    app.send(draft)
+                    draft = ""
+                }
+                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding()
+        .background(.bar)
+    }
+
+    private func gb(_ bytes: Int64) -> String {
+        String(format: "%.2f GB", Double(bytes) / Double(1 << 30))
+    }
+}
+
+private struct ModelRow: View {
+    @Environment(AppState.self) private var app
+    let entry: ModelEntry
+
+    var body: some View {
+        let verdict = app.verdict(for: entry)
+        let status = app.store.status(for: entry)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(entry.displayName).bold()
+                Spacer()
+                light(for: verdict)
+            }
+            Text(entry.id).font(.caption).foregroundStyle(.secondary)
+            switch verdict {
+            case .go: EmptyView()
+            case .caution(let why): Text(why).font(.caption).foregroundStyle(.orange)
+            case .no(let why): Text(why).font(.caption).foregroundStyle(.red)
+            }
+            statusView(status)
+            HStack {
+                switch status {
+                case .installed:
+                    Button(app.selectedEntry == entry ? "Selected" : "Use") { app.select(entry) }
+                        .disabled(app.selectedEntry == entry)
+                    Button("Delete", role: .destructive) { app.removeModel(entry) }
+                case .notInstalled, .failed:
+                    Button("Download") { app.store.install(entry) }
+                        .disabled(!verdict.allowsDownload)
+                default:
+                    Button("Cancel") { app.store.cancel(entry) }
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func light(for verdict: Verdict) -> some View {
+        switch verdict {
+        case .go: Circle().fill(.green).frame(width: 12, height: 12)
+        case .caution: Circle().fill(.orange).frame(width: 12, height: 12)
+        case .no: Circle().fill(.red).frame(width: 12, height: 12)
+        }
+    }
+
+    @ViewBuilder
+    private func statusView(_ status: ModelStore.Status) -> some View {
+        switch status {
+        case .notInstalled:
+            Text("Not downloaded").font(.caption)
+        case .fetchingManifest:
+            Text("Checking files…").font(.caption)
+        case .downloading(let written, let total, let file):
+            ProgressView(value: Double(written), total: Double(max(total, 1))) {
+                Text(file).font(.caption2)
+            }
+        case .verifying(let file):
+            Text("Verifying \(file)…").font(.caption)
+        case .installed(let model):
+            Text(String(format: "Installed, %.2f GB", Double(model.totalBytes) / Double(1 << 30))).font(.caption)
+        case .failed(let why):
+            Text(why).font(.caption).foregroundStyle(.red)
+        }
+    }
+}

@@ -1,0 +1,10 @@
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+.DS_Store
+build/
+
+# Model weights are downloaded by the app, never committed
+Models/
+*.safetensors
