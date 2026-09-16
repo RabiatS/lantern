@@ -13,13 +13,17 @@ nonisolated struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     let createdAt: Date
     /// Filled in for assistant messages once generation ends.
     var stats: GenerationStats?
+    /// Guide passages the reply was told to answer from, by title. Nil when the
+    /// persona has no guide or nothing in it matched.
+    var sources: [String]?
 
-    init(id: UUID = UUID(), role: Role, text: String, createdAt: Date = Date(), stats: GenerationStats? = nil) {
+    init(id: UUID = UUID(), role: Role, text: String, createdAt: Date = Date(), stats: GenerationStats? = nil, sources: [String]? = nil) {
         self.id = id
         self.role = role
         self.text = text
         self.createdAt = createdAt
         self.stats = stats
+        self.sources = sources
     }
 }
 
