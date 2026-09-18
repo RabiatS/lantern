@@ -72,10 +72,10 @@ nonisolated enum DeviceCapability {
             return .no("MLX does not run in the iOS Simulator. Use a real iPhone.")
         }
         if report.tier == .unsupported {
-            return .no("This iPhone has under 4 GB of memory. Nothing in the catalog fits with room to spare.")
+            return .no("This device has under 4 GB of memory. Nothing in the catalog fits with room to spare.")
         }
         if entry.requiredTier > report.tier {
-            return .no("\(entry.displayName) needs a \(entry.requiredTier.description) phone or better.")
+            return .no("\(entry.displayName) needs a \(entry.requiredTier.description) device or better.")
         }
         let need = estimatedPeakBytes(for: entry, tier: report.tier)
         if report.freeDisk < requiredDiskBytes(for: entry.approximateBytes) {
@@ -99,7 +99,12 @@ nonisolated enum DeviceCapability {
     /// Read the phone. Safe to call often; nothing here is expensive.
     static func current() -> DeviceReport {
         let physical = Int64(ProcessInfo.processInfo.physicalMemory)
+        #if os(iOS)
         let available = Int64(os_proc_available_memory())
+        #else
+        // A Mac has no per-app ceiling of the iOS kind; treat most of RAM as usable.
+        let available = physical * 3 / 4
+        #endif
         let free: Int64 = {
             let url = URL.applicationSupportDirectory
             let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])

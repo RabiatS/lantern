@@ -9,6 +9,9 @@ final class AppState {
     let engine = InferenceEngine()
     let pressure = MemoryPressureMonitor()
     let hangs = HangMonitor()
+    let impact = Impact()
+    /// The "did you know" line for the current empty chat. Re-rolled per new chat.
+    private(set) var fact = Facts.random()
     private let conversations: ConversationStore
 
     private(set) var device: DeviceReport
@@ -43,6 +46,20 @@ final class AppState {
     /// Anything that has the model's attention: a reply, a benchmark, a compaction.
     var isBusy: Bool { isGenerating || benchmark != nil || isCompacting }
 
+    /// The welcome screen shows until a model is on the phone and the person
+    /// has tapped Start once. Deleting every model brings it back.
+    private var welcomed = UserDefaults.standard.bool(forKey: "lantern.welcomed")
+    var showWelcome: Bool { !isPreview && (!welcomed || store.installedEntries.isEmpty) }
+
+    /// `--preview` on the command line seeds a sample chat so the screens can be
+    /// looked at in the simulator, where no model can run.
+    let isPreview = CommandLine.arguments.contains("--preview")
+
+    func finishWelcome() {
+        welcomed = true
+        UserDefaults.standard.set(true, forKey: "lantern.welcomed")
+    }
+
     private var reply: Task<Void, Never>?
     private var benchmark: Task<Void, Never>?
     /// The bundled guides, built once off the main actor. Nil for the first
@@ -58,6 +75,7 @@ final class AppState {
         self.current = Conversation(modelId: entry.id)
         conversations.purgeExpired()
         self.history = conversations.loadAll()
+        if isPreview { seedPreview() }
         wirePressure()
         pressure.start()
         hangs.context = { [weak self] in
@@ -69,6 +87,28 @@ final class AppState {
             let library = GuideLibrary()
             await MainActor.run { self?.library = library }
         }
+    }
+
+    private func seedPreview() {
+        persona = .firstAid
+        var chat = Conversation(modelId: ModelCatalog.qwen2_5_1_5B.id)
+        chat.messages = [
+            ChatMessage(role: .user, text: "Someone has a deep cut on their hand that will not stop bleeding."),
+            ChatMessage(role: .assistant, text: "Call emergency services now if the bleeding is heavy or they feel faint.\n\n1. Press hard and directly on the cut with a clean cloth.\n2. Do not lift it to look; add more cloth on top.\n3. Keep pressing for ten minutes and raise the hand.\n4. Watch for pale, cold or faint signs of shock.\n\nIs the cloth soaking through?",
+                        stats: GenerationStats(promptTokens: 412, generatedTokens: 78, tokensPerSecond: 81.4, promptSeconds: 0.31, timeToFirstToken: 0.38),
+                        sources: ["Severe bleeding", "Shock"]),
+            ChatMessage(role: .user, text: "Yes, a lot."),
+            ChatMessage(role: .assistant, text: "Keep the first cloth in place and add more on top. If the hand is still bleeding heavily after ten minutes of firm pressure, that is an emergency: call now and keep pressing until help arrives.",
+                        stats: GenerationStats(promptTokens: 530, generatedTokens: 44, tokensPerSecond: 83.0, promptSeconds: 0.12, timeToFirstToken: 0.16),
+                        sources: ["Severe bleeding"]),
+        ]
+        chat.refreshTitle()
+        current = chat
+        history = [chat]
+        context = ContextUsage(tokens: 1_204, limit: 8_192)
+        live = LiveStats(tokens: 44, elapsed: 0.53, tokensPerSecond: 83.0,
+                         memory: MemorySnapshot(mlxActive: 760_000_000, mlxCache: 0, mlxPeak: 790_000_000,
+                                                available: 6_100_000_000, thermalState: .nominal))
     }
 
     // MARK: Device gate
@@ -167,6 +207,17 @@ final class AppState {
     func newConversation() {
         reply?.cancel()
         current = Conversation(modelId: selectedEntry.id)
+        fact = Facts.random()
+        resetEngineConversation()
+    }
+
+    /// Everything in history, including the chat on screen.
+    func deleteAllConversations() {
+        reply?.cancel()
+        for conversation in history { try? conversations.delete(conversation.id) }
+        history.removeAll()
+        current = Conversation(modelId: selectedEntry.id)
+        fact = Facts.random()
         resetEngineConversation()
     }
 
@@ -278,6 +329,7 @@ final class AppState {
                         }
                     case .finished(let stats):
                         update(assistant.id) { $0.text = buffer; $0.stats = stats }
+                        impact.record(stats: stats, promptCharacters: prompt.count + buffer.count)
                     }
                 }
                 update(assistant.id) { $0.text = buffer }

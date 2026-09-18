@@ -37,6 +37,20 @@ second, memory in use, and the thermal state, live, while it writes.
   go offline. Chats are kept for seven days from their last message, then
   deleted; nothing accumulates.
 
+## Look and feel
+
+Plain San Francisco type, a calm blue accent on cool neutral ground, paper
+tones in light mode, and one warm thing on screen: the flame in the mark.
+Every colour is an asset with a light and dark appearance. The chat opens with
+a "did you know" card, one plain-language fact about how this kind of AI
+works, that disappears with the first message. Settings shows what staying on
+the phone has saved, with the assumptions behind the energy estimate spelled
+out on the "How Lantern works" page.
+
+The same target builds for iPhone, iPad and Mac. On a Mac the model runs on
+the same MLX code with far more memory to spare, so every model in the catalog
+is offered cleanly.
+
 ## Personas
 
 The system prompt is the one place the app has a point of view, so it is a
@@ -75,7 +89,8 @@ Note that the LLM libraries moved out of `mlx-swift-examples` into
 
 ## Building
 
-Open `Lantern.xcodeproj` in Xcode 26 and run on a physical iPhone. The first
+Open `Lantern.xcodeproj` in Xcode 26 and run on a physical iPhone, or pick
+"My Mac" as the destination to run it on the Mac. The first
 build compiles MLX's C++ and Metal kernels, which takes several minutes. Xcode
 will ask once to trust the `CudaBuild` plugin that ships inside `mlx-swift`;
 from the command line the equivalent is:
@@ -137,6 +152,11 @@ knowledge instead of guesses. The notes below grow as the project does.
   virtual addressing. Nothing here needs the latter.
 - Xcode asks once to trust the build plugin inside `mlx-swift`. From the
   command line pass `-skipPackagePluginValidation`.
+- The simulator has no MLX Metal device, and merely touching MLX's allocator
+  aborts there. Guard every MLX call behind "is a model loaded", which also
+  spares a phone a needless MLX start at launch.
+- A composer placed as a safe-area inset can end up under the keyboard on a
+  real phone. A plain vertical stack, transcript over composer, does not.
 
 ## What a model this size can do on a phone
 

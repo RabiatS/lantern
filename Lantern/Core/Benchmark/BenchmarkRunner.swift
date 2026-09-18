@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
 
 /// One prompt's numbers.
 nonisolated struct BenchmarkSample: Codable, Sendable {
@@ -79,7 +81,7 @@ nonisolated struct BenchmarkRunner: Sendable {
         var report = BenchmarkReport(
             modelId: entry.id,
             deviceModel: await Self.deviceModel(),
-            systemVersion: await UIDevice.current.systemVersion,
+            systemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
             tier: tier.description,
             physicalMemory: device.physicalMemory,
             availableAtStart: device.availableMemory,
@@ -217,6 +219,6 @@ nonisolated struct BenchmarkRunner: Sendable {
             guard let value = element.value as? Int8, value != 0 else { return }
             result.append(String(UnicodeScalar(UInt8(value))))
         }
-        return identifier.isEmpty ? UIDevice.current.model : identifier
+        return identifier.isEmpty ? "unknown" : identifier
     }
 }

@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
 
 /// The part that decides whether the app survives on a 6 GB phone under load.
 /// Two signals, because they fire at different times: UIKit's memory warning
@@ -30,6 +32,7 @@ final class MemoryPressureMonitor {
 
     func start() {
         guard source == nil else { return }
+        #if canImport(UIKit)
         let center = NotificationCenter.default
         observers.append(center.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
@@ -46,6 +49,7 @@ final class MemoryPressureMonitor {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.onForeground?() }
         })
+        #endif
 
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         source.setEventHandler { [weak self] in

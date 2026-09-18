@@ -37,6 +37,23 @@ nonisolated enum Persona: String, CaseIterable, Codable, Sendable {
         }
     }
 
+    /// SF Symbol for the picker and the chat header.
+    var symbol: String {
+        switch self {
+        case .general: "sparkles"
+        case .curious: "questionmark.circle"
+        case .dayOut: "bag"
+        case .tutor: "graduationcap"
+        case .roadside: "car"
+        case .firstAid: "cross.case"
+        case .outdoors: "mountain.2"
+        case .travel: "globe"
+        case .calm: "wind"
+        case .fieldNotes: "note.text"
+        case .electronicsTutor: "cpu"
+        }
+    }
+
     /// One line for the picker.
     var summary: String {
         switch self {

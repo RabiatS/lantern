@@ -121,17 +121,20 @@ actor InferenceEngine {
         generation?.cancel()
         generation = nil
         session = nil
+        let hadModel = container != nil
         container = nil
         loaded = nil
         state = .empty
-        Memory.clearCache()
+        // Touching MLX's allocator starts Metal. Never do that for nothing: it
+        // costs time on a phone and aborts in the simulator, which has no MLX device.
+        if hadModel { Memory.clearCache() }
     }
 
     /// Keep the weights, throw away the conversation's KV cache and the buffer
     /// pool. Costs one prefill on the next turn; frees most of what is not weights.
     func dropContext() {
         session = nil
-        Memory.clearCache()
+        if container != nil { Memory.clearCache() }
     }
 
     /// Start (or restart) a conversation. Past turns are prefilled on the first
@@ -329,8 +332,16 @@ actor InferenceEngine {
             mlxActive: Int64(snapshot.activeMemory),
             mlxCache: Int64(snapshot.cacheMemory),
             mlxPeak: Int64(snapshot.peakMemory),
-            available: Int64(os_proc_available_memory()),
+            available: Self.availableMemory(),
             thermalState: ProcessInfo.processInfo.thermalState)
+    }
+
+    nonisolated static func availableMemory() -> Int64 {
+        #if os(iOS)
+        Int64(os_proc_available_memory())
+        #else
+        Int64(ProcessInfo.processInfo.physicalMemory) * 3 / 4
+        #endif
     }
 
     nonisolated static func resetPeakMemory() {
