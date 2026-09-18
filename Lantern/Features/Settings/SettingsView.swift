@@ -18,6 +18,7 @@ struct SettingsView: View {
                     }
                 }
                 .listRowBackground(Theme.surface)
+                backendSection
                 impactSection
                 phoneSection
                 modelsSection
@@ -34,6 +35,66 @@ struct SettingsView: View {
         }
         .tint(Theme.accent)
         .onAppear { app.refreshDevice() }
+    }
+
+    // MARK: Backend
+
+    private var backendSection: some View {
+        Section {
+            @Bindable var app = app
+            Picker("Answer with", selection: $app.backend) {
+                ForEach(BackendKind.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .disabled(!app.appleStatus.isAvailable)
+            Text(app.backend.summary)
+                .font(.caption)
+                .foregroundStyle(Theme.muted)
+            LabeledContent("Apple Intelligence") {
+                Text(app.appleStatus.isAvailable ? "Available" : "Not available")
+                    .foregroundStyle(app.appleStatus.isAvailable ? .green : Theme.muted)
+            }
+            Text(app.appleStatus.text)
+                .font(.caption)
+                .foregroundStyle(Theme.muted)
+            comparison
+        } header: {
+            Text("Who answers")
+        } footer: {
+            Text(app.appleStatus.isAvailable
+                 ? "Even when the Lantern model answers, Apple's model writes the summaries that keep long chats going, so the downloaded model keeps its memory."
+                 : "The Lantern model is the only option on this device.")
+        }
+        .listRowBackground(Theme.surface)
+    }
+
+    @ViewBuilder
+    private var comparison: some View {
+        if !app.benchmarks.isEmpty {
+            Grid(alignment: .leading, horizontalSpacing: Theme.Space.l, verticalSpacing: Theme.Space.xs) {
+                GridRow {
+                    Text("Quick benchmark").font(.caption.weight(.semibold))
+                    Text("Lantern").font(.caption.weight(.semibold))
+                    Text("Apple").font(.caption.weight(.semibold))
+                }
+                comparisonRow("To first token") { String(format: "%.2fs", $0.timeToFirstToken) }
+                comparisonRow("Tokens per second") { String(format: "%.0f", $0.tokensPerSecond) }
+                comparisonRow("Peak memory in app") { $0.mlxPeakBytes.byteText }
+            }
+            .font(Theme.readout(.caption))
+            .foregroundStyle(Theme.muted)
+            Text("Apple's token figures are estimated from characters; iOS does not report them. Its memory is held by the system, not the app.")
+                .font(.caption2)
+                .foregroundStyle(Theme.muted)
+        }
+    }
+
+    private func comparisonRow(_ label: String, _ value: @escaping (BenchmarkSample) -> String) -> some View {
+        GridRow {
+            Text(label)
+            Text(app.benchmarks[.lantern]?.samples.first.map(value) ?? "–")
+            Text(app.benchmarks[.apple]?.samples.first.map(value) ?? "–")
+        }
     }
 
     // MARK: Impact
@@ -61,6 +122,8 @@ struct SettingsView: View {
             readout("Memory", app.device.physicalMemory.byteText)
             readout("App may use now", app.device.availableMemory.byteText)
             readout("Free disk", app.device.freeDisk.byteText)
+            readout("Chip", app.device.gpuName.replacingOccurrences(of: " GPU", with: ""))
+            readout("GPU family", app.device.gpuFamily)
             readout("Tier", "\(app.device.tier)")
             readout("Engine", engineText)
             if let context = app.context {
@@ -122,6 +185,8 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(app.isBusy || !app.readyForOffline)
+                Text("Runs on whichever is answering. Run it once with each to fill the comparison above.")
+                    .font(.caption).foregroundStyle(Theme.muted)
             }
             if let report = app.lastBenchmark {
                 VStack(alignment: .leading, spacing: Theme.Space.xs) {

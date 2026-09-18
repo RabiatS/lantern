@@ -14,6 +14,9 @@ nonisolated struct DeviceReport: Sendable, Equatable {
     let isSimulator: Bool
     let tier: DeviceTier
     let thermalState: ProcessInfo.ThermalState
+    /// The GPU as Metal names it, like "Apple A19 Pro GPU", and its family.
+    let gpuName: String
+    let gpuFamily: String
 }
 
 /// Whether one model should be offered on this device.
@@ -115,15 +118,28 @@ nonisolated enum DeviceCapability {
         #else
         let simulator = false
         #endif
+        let device = MTLCreateSystemDefaultDevice()
         return DeviceReport(
             physicalMemory: physical,
             availableMemory: available,
             freeDisk: free,
-            hasMetal: MTLCreateSystemDefaultDevice() != nil,
+            hasMetal: device != nil,
             isSimulator: simulator,
             tier: tier(forPhysicalMemory: physical),
-            thermalState: ProcessInfo.processInfo.thermalState
+            thermalState: ProcessInfo.processInfo.thermalState,
+            gpuName: device?.name ?? "none",
+            gpuFamily: gpuFamily(of: device)
         )
+    }
+
+    /// The newest Apple GPU family the device supports, as a plain label.
+    static func gpuFamily(of device: MTLDevice?) -> String {
+        guard let device else { return "none" }
+        if device.supportsFamily(.apple9) { return "Apple 9 (A17 Pro, M3 and newer)" }
+        if device.supportsFamily(.apple8) { return "Apple 8 (A15, A16, M2)" }
+        if device.supportsFamily(.apple7) { return "Apple 7 (A14, M1)" }
+        if device.supportsFamily(.apple6) { return "Apple 6 (A13)" }
+        return "older Apple GPU"
     }
 }
 

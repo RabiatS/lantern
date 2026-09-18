@@ -7,6 +7,19 @@ import Observation
 final class AppState {
     let store: ModelStore
     let engine = InferenceEngine()
+    let apple = AppleEngine()
+    /// Whether Apple's model can be used here, read at launch and on foreground.
+    private(set) var appleStatus = AppleIntelligence.status()
+    /// Who answers. Persisted. Falls back to the Lantern model if Apple's is unavailable.
+    var backend: BackendKind = BackendKind(rawValue: UserDefaults.standard.string(forKey: "lantern.backend") ?? "") ?? .lantern {
+        didSet {
+            UserDefaults.standard.set(backend.rawValue, forKey: "lantern.backend")
+            resetEngineConversation()
+        }
+    }
+    var usingApple: Bool { backend == .apple && appleStatus.isAvailable }
+    /// The last benchmark per backend, for the side by side.
+    private(set) var benchmarks: [BackendKind: BenchmarkReport] = [:]
     let pressure = MemoryPressureMonitor()
     let hangs = HangMonitor()
     let impact = Impact()
@@ -49,7 +62,7 @@ final class AppState {
     /// The welcome screen shows until a model is on the phone and the person
     /// has tapped Start once. Deleting every model brings it back.
     private var welcomed = UserDefaults.standard.bool(forKey: "lantern.welcomed")
-    var showWelcome: Bool { !isPreview && (!welcomed || store.installedEntries.isEmpty) }
+    var showWelcome: Bool { !isPreview && (!welcomed || (store.installedEntries.isEmpty && !usingApple)) }
 
     /// `--preview` on the command line seeds a sample chat so the screens can be
     /// looked at in the simulator, where no model can run.
@@ -115,6 +128,13 @@ final class AppState {
 
     func refreshDevice() {
         device = DeviceCapability.current()
+        appleStatus = AppleIntelligence.status()
+    }
+
+    /// Switch to Apple's model without downloading anything.
+    func startWithApple() {
+        backend = .apple
+        finishWelcome()
     }
 
     func verdict(for entry: ModelEntry) -> Verdict {
@@ -127,8 +147,9 @@ final class AppState {
     }
 
     /// The thing to check before leaving Wi-Fi: is the chosen model on the phone.
+    /// Apple's model counts once it is available; iOS keeps it resident.
     var readyForOffline: Bool {
-        store.installedModel(for: selectedEntry) != nil
+        usingApple || store.installedModel(for: selectedEntry) != nil
     }
 
     /// Days until a conversation is deleted, rounded up. Zero means today.
@@ -169,6 +190,10 @@ final class AppState {
     /// Load the selected model if it is not already resident. Reload on demand is
     /// this: after a pressure unload the next send lands here.
     func ensureLoaded() async throws {
+        if usingApple {
+            await apple.beginConversation(instructions: persona.instructions, history: current.messages)
+            return
+        }
         guard store.installedModel(for: selectedEntry) != nil else {
             throw ModelStoreError.notInstalled(selectedEntry.id)
         }
@@ -185,6 +210,10 @@ final class AppState {
 
     /// Ask the engine where the context stands. Cheap; called after each turn.
     private func syncContext() async {
+        if usingApple {
+            context = nil
+            return
+        }
         context = await engine.loadedEntry == nil ? nil : await engine.contextUsage
     }
 
@@ -234,6 +263,7 @@ final class AppState {
         let messages = current.messages
         let instructions = persona.instructions
         Task {
+            await apple.beginConversation(instructions: instructions, history: messages)
             if await engine.loadedEntry == selectedEntry {
                 try? await engine.beginConversation(instructions: instructions, history: messages)
             }
@@ -303,7 +333,8 @@ final class AppState {
                 var lastText = started
                 var lastLive = started
                 live = LiveStats(tokens: 0, elapsed: 0, tokensPerSecond: 0, memory: await Self.snapshotOffMain())
-                for try await event in await engine.stream(modelPrompt) {
+                let events = usingApple ? await apple.stream(modelPrompt) : await engine.stream(modelPrompt)
+                for try await event in events {
                     switch event {
                     case .token(let piece):
                         buffer += piece
@@ -352,6 +383,12 @@ final class AppState {
         Task { await engine.cancelGeneration() }
     }
 
+    /// Text for one message's stats line: Apple's numbers are estimates.
+    static func statsLine(_ stats: GenerationStats) -> String {
+        let prefix = stats.estimated == true ? "~" : ""
+        return String(format: "%@%.0f tok/s · %@%d tokens · %.2fs to first", prefix, stats.tokensPerSecond, prefix, stats.generatedTokens, stats.timeToFirstToken)
+    }
+
     // MARK: Compaction
 
     /// Fold everything but the last two turns into a summary and keep going.
@@ -367,7 +404,13 @@ final class AppState {
         defer { isCompacting = false }
         do {
             try await ensureLoaded()
-            let summary = try await engine.compact()
+            if usingApple {
+                // Apple's session manages its own window; nothing to fold.
+                return
+            }
+            // When Apple's model is available it writes the summary: the
+            // downloaded model keeps its memory and the phone its time.
+            let summary = try await engine.compact(using: appleStatus.isAvailable ? apple : nil)
             current.messages.append(ChatMessage(
                 role: .system,
                 text: "Older messages were summarised to keep the conversation going: " + summary))
@@ -441,17 +484,18 @@ final class AppState {
             }
             do {
                 try await ensureLoaded()
-                let runner = BenchmarkRunner(engine: engine)
+                let kind = usingApple ? BackendKind.apple : .lantern
+                let runner = BenchmarkRunner(engine: usingApple ? apple : engine, backend: kind)
                 let report = try await runner.run(
                     mode: mode,
-                    entry: selectedEntry,
-                    directory: store.directory(for: selectedEntry),
+                    modelId: usingApple ? "apple/foundation-model" : selectedEntry.id,
                     tier: device.tier,
-                    loadSeconds: lastLoadSeconds
+                    loadSeconds: usingApple ? 0 : lastLoadSeconds
                 ) { [weak self] message in
                     Task { @MainActor in self?.benchmarkProgress = message }
                 }
                 lastBenchmark = report
+                benchmarks[kind] = report
                 // The benchmark's sessions were throwaway; put the conversation back.
                 try await engine.beginConversation(instructions: persona.instructions, history: current.messages)
             } catch is CancellationError {

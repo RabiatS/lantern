@@ -29,6 +29,8 @@ nonisolated struct SustainedWindow: Codable, Sendable {
 }
 
 nonisolated struct BenchmarkReport: Codable, Sendable {
+    /// "lantern" or "apple". Old files without it are the Lantern model.
+    var backend: String?
     let modelId: String
     let deviceModel: String
     let systemVersion: String
@@ -67,19 +69,20 @@ nonisolated struct BenchmarkRunner: Sendable {
         URL.documentsDirectory.appending(path: "Benchmarks", directoryHint: .isDirectory)
     }
 
-    let engine: InferenceEngine
+    let engine: any GenerationBackend
+    let backend: BackendKind
 
     func run(
         mode: BenchmarkMode,
-        entry: ModelEntry,
-        directory: URL,
+        modelId: String,
         tier: DeviceTier,
         loadSeconds: Double,
         progress: @Sendable @escaping (String) -> Void
     ) async throws -> BenchmarkReport {
         let device = DeviceCapability.current()
         var report = BenchmarkReport(
-            modelId: entry.id,
+            backend: backend.rawValue,
+            modelId: modelId,
             deviceModel: await Self.deviceModel(),
             systemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
             tier: tier.description,
@@ -163,7 +166,7 @@ nonisolated struct BenchmarkRunner: Sendable {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let stamp = ISO8601DateFormatter().string(from: report.startedAt)
             .replacingOccurrences(of: ":", with: "-")
-        let slug = report.modelId.split(separator: "/").last.map(String.init) ?? report.modelId
+        let slug = (report.backend ?? "lantern") + "-" + (report.modelId.split(separator: "/").last.map(String.init) ?? report.modelId)
         let base = directory.appending(path: "\(stamp)-\(slug)")
 
         let encoder = JSONEncoder()
@@ -175,7 +178,7 @@ nonisolated struct BenchmarkRunner: Sendable {
 
     static func csv(_ report: BenchmarkReport) -> String {
         var lines: [String] = []
-        lines.append("# \(report.modelId) on \(report.deviceModel) iOS \(report.systemVersion), \(report.tier), load \(String(format: "%.2f", report.loadSeconds))s, \(report.note)")
+        lines.append("# \(report.backend ?? "lantern") \(report.modelId) on \(report.deviceModel) \(report.systemVersion), \(report.tier), load \(String(format: "%.2f", report.loadSeconds))s, \(report.note)")
         if !report.samples.isEmpty {
             lines.append("index,prompt_tokens,generated_tokens,ttft_s,prefill_s,tok_per_s,mlx_peak_mb,available_after_mb,thermal")
             for s in report.samples {

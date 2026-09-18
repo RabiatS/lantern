@@ -51,6 +51,25 @@ The same target builds for iPhone, iPad and Mac. On a Mac the model runs on
 the same MLX code with far more memory to spare, so every model in the catalog
 is offered cleanly.
 
+## Apple Intelligence
+
+On an iPhone 15 Pro or later with Apple Intelligence on, iOS keeps a built-in
+model of about 3 billion parameters loaded and shares it between apps. Lantern
+treats it as a second engine behind the same interface: pick "Apple
+Intelligence" under "Who answers" and the chat, the personas and the guides
+run on it, with no download. The quick benchmark runs on whichever engine is
+answering, and Settings shows the two side by side.
+
+The two also work together. When Apple's model is available it writes the
+summaries that keep long chats going, so the downloaded model keeps its memory
+and the phone its time. The welcome screen offers Apple's model as a way to
+start immediately and download a Lantern model later.
+
+What Apple's model cannot give you is the point of the Lantern model: you
+cannot see its memory, choose its size, read its weights, or run it on a phone
+without Apple Intelligence. Its token counts are estimated from characters,
+and the app marks them with a tilde.
+
 ## Personas
 
 The system prompt is the one place the app has a point of view, so it is a

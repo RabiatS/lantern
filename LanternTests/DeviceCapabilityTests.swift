@@ -22,7 +22,8 @@ struct DeviceCapabilityTests {
             hasMetal: metal,
             isSimulator: simulator,
             tier: DeviceCapability.tier(forPhysicalMemory: physicalBytes),
-            thermalState: .nominal)
+            thermalState: .nominal,
+            gpuName: "test", gpuFamily: "test")
     }
 
     @Test func fourGigabytePhoneRunsOneBOnly() {

@@ -17,6 +17,18 @@ nonisolated struct GenerationStats: Sendable, Equatable, Codable {
     let promptSeconds: Double
     /// Wall clock from the request to the first visible token.
     let timeToFirstToken: Double
+    /// True when the engine cannot count tokens and they were estimated from
+    /// characters, which is the case for Apple's model.
+    let estimated: Bool?
+
+    init(promptTokens: Int, generatedTokens: Int, tokensPerSecond: Double, promptSeconds: Double, timeToFirstToken: Double, estimated: Bool? = nil) {
+        self.promptTokens = promptTokens
+        self.generatedTokens = generatedTokens
+        self.tokensPerSecond = tokensPerSecond
+        self.promptSeconds = promptSeconds
+        self.timeToFirstToken = timeToFirstToken
+        self.estimated = estimated
+    }
 }
 
 nonisolated struct MemorySnapshot: Sendable, Equatable {
@@ -285,7 +297,7 @@ actor InferenceEngine {
     /// The KV cache is dropped; the next send prefills the summary plus the
     /// recent turns, which is far cheaper than the window it replaces. Returns
     /// the summary for the caller to show.
-    func compact() async throws -> String {
+    func compact(using summariser: AppleEngine? = nil) async throws -> String {
         guard container != nil else { throw EngineError.noModelLoaded }
         let keep = 4
         guard history.count > keep + 1 else { throw EngineError.nothingToCompact }
@@ -303,8 +315,12 @@ actor InferenceEngine {
             \(transcript)
             """
         var summary = ""
-        for try await event in generateOnce(request, maxTokens: 220) {
-            if case .token(let text) = event { summary += text }
+        if let summariser {
+            summary = try await summariser.summarise(transcript)
+        } else {
+            for try await event in generateOnce(request, maxTokens: 220) {
+                if case .token(let text) = event { summary += text }
+            }
         }
         summary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !summary.isEmpty else { throw EngineError.nothingToCompact }

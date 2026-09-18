@@ -43,7 +43,7 @@ struct MessageBubble: View {
                     .padding(.leading, Theme.Space.s)
             }
             if let stats = message.stats {
-                Text(String(format: "%.0f tok/s · %d tokens · %.2fs to first", stats.tokensPerSecond, stats.generatedTokens, stats.timeToFirstToken))
+                Text(AppState.statsLine(stats))
                     .font(Theme.readout(.caption2))
                     .foregroundStyle(Theme.muted)
                     .padding(.leading, Theme.Space.s)

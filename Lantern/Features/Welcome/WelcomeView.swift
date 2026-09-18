@@ -116,6 +116,20 @@ struct WelcomeView: View {
                 .font(.caption)
                 .foregroundStyle(Theme.muted)
                 .multilineTextAlignment(.center)
+            if app.appleStatus.isAvailable {
+                Button {
+                    app.startWithApple()
+                } label: {
+                    Text("Or start now with Apple Intelligence, no download").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.accent)
+                .controlSize(.large)
+                Text("Apple's built-in model is already on this phone. You can download a Lantern model later and compare them.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.muted)
+                    .multilineTextAlignment(.center)
+            }
         }
     }
 }

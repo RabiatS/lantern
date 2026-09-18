@@ -13,6 +13,7 @@ struct TransparencyView: View {
                         "A language model is a very large table of numbers that learned patterns of language from text. Lantern downloads one of these once, about the size of a few hundred photos, and keeps it on this phone. When you ask something, the phone's own chip runs the numbers. No message is sent anywhere. You can turn on airplane mode and nothing changes.")
                 section("Why your phone can run this much",
                         memoryStory)
+                section("What comes with iOS, and what Lantern adds", platformStory)
                 section("Why some models are warned or missing",
                         "Every model needs its own weight in memory plus room to remember the conversation. Lantern adds those up before you download and shows a green, amber or red light. Green means comfortable. Amber means it will work but may be cut short when memory runs low. Red means it would be shut down by the phone, so it is not offered.")
                 section("What the numbers under a reply mean",
@@ -56,6 +57,25 @@ struct TransparencyView: View {
         case .pro: tierLine = "That is comfortable for everything here up to 3 billion numbers, and tight for the largest."
         }
         return "This iPhone has \(total) of memory. iOS never lets one app take all of it, because the camera, your messages and the rest of the phone need to keep working. Right now Lantern is allowed about \(available). \(tierLine) The limit moves as other apps open and close, which is why Lantern checks it live rather than once."
+    }
+
+    private var platformStory: String {
+        let gpu = app.device.gpuName.replacingOccurrences(of: " GPU", with: "")
+        let apple: String
+        switch app.appleStatus {
+        case .available:
+            apple = "This device also has Apple Intelligence, which includes a built-in model of about 3 billion parameters that iOS keeps loaded and shares between apps. Lantern can answer with it too, and uses it to write the summaries that keep long chats going. It is a strong general model, but its numbers are Apple's to manage: you cannot see its memory or choose its size."
+        case .notEligible:
+            apple = "Apple Intelligence is not on this device, so there is no built-in model to borrow. Everything here runs on the model Lantern downloads."
+        case .notEnabled:
+            apple = "Apple Intelligence is turned off on this device. Turned on, it adds a built-in model Lantern could answer with and use for summaries."
+        case .notReady:
+            apple = "Apple Intelligence is still preparing its model on this device. Once ready, Lantern can answer with it and use it for summaries."
+        case .unsupportedOS:
+            apple = "This version of the system has no built-in language model. Everything here runs on the model Lantern downloads."
+        }
+        let storage = app.device.freeDisk.byteText
+        return "The chip is a \(gpu), with a graphics part in the \(app.device.gpuFamily) family. That part runs the model's arithmetic; the Neural Engine on the same chip is used by iOS for its own features. \(apple) What Lantern adds is a model you choose and can inspect: with \(storage) free, there is room for every model in the catalog; the largest weighs about 4.5 GB. More memory unlocks larger models, more storage lets you keep more of them, and a newer graphics family makes each one faster."
     }
 
     private func section(_ title: String, _ body: String) -> some View {

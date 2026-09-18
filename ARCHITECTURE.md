@@ -168,6 +168,15 @@ written to `Documents/Diagnostics/hangs.jsonl` with the engine state and
 whether a reply or a compaction was running. It exists because "it freezes
 sometimes" needs a timestamp before it can be fixed.
 
+**AppleEngine** wraps the Foundation Models framework behind the same
+`GenerationEvent` stream as the MLX engine. A session is rebuilt from the
+message list whenever the conversation changes, using a `Transcript` of
+instructions, prompts and responses. Apple exposes no token counts, so the
+stats estimate four characters per token and carry an `estimated` flag the UI
+renders as a tilde. The benchmark runner takes any `GenerationBackend`, which
+is how the two engines end up in one comparison table. Compaction on the MLX
+side hands the summary job to Apple's model when it is available.
+
 **MemoryPressureMonitor** listens to two signals because they mean different
 things. `UIApplication.didReceiveMemoryWarningNotification` is the system
 asking this app for memory back. The `DispatchSource` memory pressure source

@@ -5,6 +5,7 @@ import Testing
 struct BenchmarkRunnerTests {
     @Test func csvHasOneHeaderPerSectionAndRoundsSensibly() {
         let report = BenchmarkReport(
+            backend: "lantern",
             modelId: "mlx-community/Llama-3.2-1B-Instruct-4bit",
             deviceModel: "iPhone17,1",
             systemVersion: "26.5",
@@ -18,7 +19,7 @@ struct BenchmarkRunnerTests {
             note: "test")
         let csv = BenchmarkRunner.csv(report)
         let lines = csv.split(separator: "\n")
-        #expect(lines[0].hasPrefix("# mlx-community/Llama-3.2-1B-Instruct-4bit on iPhone17,1"))
+        #expect(lines[0].hasPrefix("# lantern mlx-community/Llama-3.2-1B-Instruct-4bit on iPhone17,1"))
         #expect(lines[1] == "index,prompt_tokens,generated_tokens,ttft_s,prefill_s,tok_per_s,mlx_peak_mb,available_after_mb,thermal")
         #expect(lines[2] == "0,12,100,0.210,0.150,41.200,900,5120,nominal")
         #expect(lines[3] == "seconds,tokens_in_window,tok_per_s,thermal,mlx_active_mb,available_mb")
