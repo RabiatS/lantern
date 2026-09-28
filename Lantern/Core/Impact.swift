@@ -58,6 +58,19 @@ final class Impact {
     /// is used so the saving is not overstated.
     static let cloudWattHoursPerReply = 0.3
 
+    /// Water a data-centre reply uses for cooling, in millilitres. Google
+    /// measured 0.26 mL for a median Gemini text prompt (2025); older studies
+    /// that also count the water used to generate the electricity put it at 10
+    /// to 50 mL. The lower, measured on-site figure is used. A phone or Mac has
+    /// no cooling water, and neither side's power-station water is counted.
+    static let cloudWaterMillilitresPerReply = 0.26
+
+    /// Cooling water the same replies would have used in a data centre.
+    var waterSavedMillilitres: Double { Double(replies) * Self.cloudWaterMillilitresPerReply }
+
+    /// A glass of water is taken as 250 mL, to put the figure in a picture.
+    var glassesOfWaterSaved: Double { waterSavedMillilitres / 250 }
+
     /// Power the device draws while the model writes, in watts. Six for a
     /// phone, twenty for a Mac; the reasoning is in Platform.
     static let phoneWattsWhileGenerating = Platform.wattsWhileGenerating

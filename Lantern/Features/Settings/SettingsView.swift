@@ -118,6 +118,10 @@ struct SettingsView: View {
         Section {
             readout("Replies answered here", "\(app.impact.replies)")
             readout("Words never sent anywhere", "\(app.impact.charactersKeptOnPhone / 5)")
+            readout("Water saved, estimated", Self.water(app.impact.waterSavedMillilitres))
+            if app.impact.glassesOfWaterSaved >= 0.1 {
+                readout("About the same as", String(format: "%.1f glasses of water", app.impact.glassesOfWaterSaved))
+            }
             readout("Energy saved, estimated", String(format: "%.1f Wh", app.impact.wattHoursSaved))
             if app.impact.wattHoursSaved >= 1 {
                 readout("About the same as", String(format: "%.1f phone charges", app.impact.phoneChargesSaved))
@@ -125,9 +129,14 @@ struct SettingsView: View {
         } header: {
             Text("What staying on this \(Platform.device) has saved")
         } footer: {
-            Text("Replies and words are counted. Energy is an estimate: a data-centre reply at about 0.3 Wh, against this \(Platform.device) at about \(Int(Platform.wattsWhileGenerating)) W for the seconds it spent writing. The assumptions are on the \"How Lantern works\" page.")
+            Text("Replies and words are counted. Water and energy are estimates: a data-centre reply uses about 0.26 mL of cooling water and 0.3 Wh, against this \(Platform.device) at about \(Int(Platform.wattsWhileGenerating)) W for the seconds it spent writing. The assumptions are on the \"How Lantern works\" page.")
         }
         .listRowBackground(Theme.surface)
+    }
+
+    /// Millilitres under a litre, litres after.
+    static func water(_ millilitres: Double) -> String {
+        millilitres < 1000 ? String(format: "%.0f mL", millilitres) : String(format: "%.2f L", millilitres / 1000)
     }
 
     // MARK: Phone
