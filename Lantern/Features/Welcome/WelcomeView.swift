@@ -145,9 +145,12 @@ private struct ModelChoiceRow: View {
             HStack(spacing: Theme.Space.m) {
                 StatusLight(verdict: verdict)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.displayName)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(Theme.ink)
+                    HStack(spacing: Theme.Space.s) {
+                        Text(entry.displayName)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Theme.ink)
+                        if entry.seesPhotos { Chip(text: "sees photos", systemImage: "eye") }
+                    }
                     Text("\(entry.approximateBytes.byteText) · \(entry.family)")
                         .font(.caption)
                         .foregroundStyle(Theme.muted)

@@ -27,6 +27,14 @@ nonisolated enum DeviceTier: Int, Codable, Comparable, Sendable, CustomStringCon
 /// One model the app knows how to download and run. The catalog is static on
 /// purpose: it is the contract between the device gate, the store and the engine,
 /// and nothing about it should depend on a network reply.
+/// What a model takes in.
+nonisolated enum ModelKind: String, Codable, Sendable {
+    /// Text in, text out.
+    case text
+    /// Text and pictures in, text out. Loaded through the vision factory.
+    case vision
+}
+
 nonisolated struct ModelEntry: Identifiable, Hashable, Codable, Sendable {
     /// Hugging Face repository id, also the on-disk identity.
     let id: String
@@ -50,9 +58,13 @@ nonisolated struct ModelEntry: Identifiable, Hashable, Codable, Sendable {
     let contextWindow: Int
     /// Repository requires accepting a licence on Hugging Face before download.
     let gated: Bool
+    /// Text only, or text and pictures.
+    var kind: ModelKind = .text
 
     /// Folder name inside the model store. Slashes are not allowed in a path.
     var folderName: String { id.replacingOccurrences(of: "/", with: "__") }
+
+    var seesPhotos: Bool { kind == .vision }
 }
 
 nonisolated enum ModelCatalog {
@@ -139,7 +151,48 @@ nonisolated enum ModelCatalog {
         gated: false
     )
 
-    static let all: [ModelEntry] = [llama3_2_1B, qwen2_5_1_5B, llama3_2_3B, phi3_5Mini, llama3_1_8B]
+    // MARK: Vision
+
+    /// The smallest model that can look at a picture: 287 MB. Reads signs and
+    /// labels and describes a scene; fine detail is beyond it. Text side is
+    /// SmolLM2 360M: 32 layers, 5 KV heads of 64.
+    static let smolVLM500M = ModelEntry(
+        id: "mlx-community/SmolVLM-500M-Instruct-4bit",
+        displayName: "SmolVLM 500M",
+        family: "SmolVLM",
+        parameterBillions: 0.5,
+        approximateBytes: 286_702_361,
+        kvBytesPerToken: 32 * 5 * 64 * 2 * 2,
+        requiredTier: .compact,
+        comfortableTier: .compact,
+        extraEOSTokens: ["<end_of_utterance>"],
+        contextWindow: 16_384,
+        gated: false,
+        kind: .vision
+    )
+
+    /// The one to reach for: reads a menu, a document, a diagram. 28 layers
+    /// with 2 KV heads of 128, so context is cheap; each picture adds a few
+    /// hundred tokens at the size Lantern feeds it.
+    static let qwen2VL2B = ModelEntry(
+        id: "mlx-community/Qwen2-VL-2B-Instruct-4bit",
+        displayName: "Qwen2-VL 2B",
+        family: "Qwen",
+        parameterBillions: 2.2,
+        approximateBytes: 1_245_868_907,
+        kvBytesPerToken: 28 * 2 * 128 * 2 * 2,
+        requiredTier: .standard,
+        comfortableTier: .standard,
+        extraEOSTokens: ["<|im_end|>"],
+        contextWindow: 32_768,
+        gated: false,
+        kind: .vision
+    )
+
+    static let all: [ModelEntry] = [llama3_2_1B, qwen2_5_1_5B, llama3_2_3B, phi3_5Mini, llama3_1_8B, smolVLM500M, qwen2VL2B]
+
+    /// Models that can look at a picture, in catalog order.
+    static let vision: [ModelEntry] = all.filter { $0.kind == .vision }
 
     static let defaultEntry = llama3_2_1B
 

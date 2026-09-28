@@ -13,7 +13,14 @@ struct MessageBubble: View {
         case .user:
             HStack {
                 Spacer(minLength: 48)
-                bubble(text: message.text, isUser: true)
+                VStack(alignment: .trailing, spacing: Theme.Space.xs) {
+                    if let name = message.imageName, let picture = app.images.load(name) {
+                        CGImageView(image: picture)
+                            .frame(maxWidth: 220, maxHeight: 220)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                    }
+                    bubble(text: message.text, isUser: true)
+                }
             }
         case .assistant:
             HStack(alignment: .bottom) {
@@ -28,6 +35,14 @@ struct MessageBubble: View {
     private var assistantBubble: some View {
         let text = isStreaming ? (app.streamingText ?? "") : message.text
         return VStack(alignment: .leading, spacing: Theme.Space.xs) {
+            if let name = message.imageName, let picture = app.images.load(name) {
+                CGImageView(image: picture)
+                    .frame(maxWidth: 300, maxHeight: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                    .contextMenu {
+                        Button("Copy picture", systemImage: "doc.on.doc") { Clipboard.copy(picture) }
+                    }
+            }
             if text.isEmpty {
                 ThinkingDots()
                     .padding(.horizontal, Theme.Space.l)

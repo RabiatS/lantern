@@ -16,14 +16,17 @@ nonisolated struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     /// Guide passages the reply was told to answer from, by title. Nil when the
     /// persona has no guide or nothing in it matched.
     var sources: [String]?
+    /// File name of a picture attached to a user message, inside the image store.
+    var imageName: String?
 
-    init(id: UUID = UUID(), role: Role, text: String, createdAt: Date = Date(), stats: GenerationStats? = nil, sources: [String]? = nil) {
+    init(id: UUID = UUID(), role: Role, text: String, createdAt: Date = Date(), stats: GenerationStats? = nil, sources: [String]? = nil, imageName: String? = nil) {
         self.id = id
         self.role = role
         self.text = text
         self.createdAt = createdAt
         self.stats = stats
         self.sources = sources
+        self.imageName = imageName
     }
 }
 

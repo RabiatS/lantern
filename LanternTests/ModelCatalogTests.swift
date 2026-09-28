@@ -28,7 +28,7 @@ struct ModelCatalogTests {
         #expect(!standard.contains(ModelCatalog.llama3_1_8B))
         #expect(standard.contains(ModelCatalog.llama3_2_3B))
         #expect(ModelCatalog.entries(for: .unsupported).isEmpty)
-        #expect(ModelCatalog.entries(for: .compact) == [ModelCatalog.llama3_2_1B, ModelCatalog.qwen2_5_1_5B])
+        #expect(ModelCatalog.entries(for: .compact) == [ModelCatalog.llama3_2_1B, ModelCatalog.qwen2_5_1_5B, ModelCatalog.smolVLM500M])
         #expect(ModelCatalog.entries(for: .pro).count == ModelCatalog.all.count)
     }
 
@@ -36,5 +36,15 @@ struct ModelCatalogTests {
         for entry in ModelCatalog.all {
             #expect(!entry.folderName.contains("/"))
         }
+    }
+
+    @Test func visionModelsAreMarkedAndFitTheirTiers() {
+        #expect(ModelCatalog.vision.map(\.id) == [ModelCatalog.smolVLM500M.id, ModelCatalog.qwen2VL2B.id])
+        let allSee = ModelCatalog.vision.allSatisfy { $0.seesPhotos }
+        #expect(allSee)
+        #expect(ModelCatalog.llama3_2_1B.seesPhotos == false)
+        #expect(ModelCatalog.smolVLM500M.requiredTier == .compact)
+        #expect(ModelCatalog.qwen2VL2B.requiredTier == .standard)
+        #expect(ModelCatalog.entries(for: .compact).contains(ModelCatalog.smolVLM500M))
     }
 }

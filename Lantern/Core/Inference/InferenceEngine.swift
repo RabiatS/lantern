@@ -1,7 +1,9 @@
+import CoreGraphics
 import Foundation
 import MLX
 import MLXLLM
 import MLXLMCommon
+import MLXVLM
 
 /// What the engine reports back while a reply is being written.
 nonisolated enum GenerationEvent: Sendable {
@@ -116,9 +118,11 @@ actor InferenceEngine {
                 stopStrings: nil,
                 eosTokenIds: [],
                 toolCallFormat: nil)
-            let context = try await LLMModelFactory.shared._load(
-                configuration: configuration,
-                tokenizerLoader: TransformersTokenizerLoader())
+            let loader = TransformersTokenizerLoader()
+            let context: ModelContext = switch entry.kind {
+            case .text: try await LLMModelFactory.shared._load(configuration: configuration, tokenizerLoader: loader)
+            case .vision: try await VLMModelFactory.shared._load(configuration: configuration, tokenizerLoader: loader)
+            }
             container = ModelContainer(context: context)
             loaded = entry
             state = .ready(entry.id)
@@ -175,7 +179,10 @@ actor InferenceEngine {
     /// Stream a reply in the current conversation. Tokens arrive as they are
     /// sampled; the last event carries the timing. Cancel by cancelling the task
     /// that iterates.
-    func stream(_ prompt: String) -> AsyncThrowingStream<GenerationEvent, Error> {
+    /// `imageURL` is a picture for a vision model to look at with this turn.
+    /// Pictures are resized to 512 on the long side before they reach the model,
+    /// which keeps their token cost in the hundreds.
+    func stream(_ prompt: String, imageURL: URL? = nil) -> AsyncThrowingStream<GenerationEvent, Error> {
         guard let container else {
             return AsyncThrowingStream { $0.finish(throwing: EngineError.noModelLoaded) }
         }
@@ -183,9 +190,10 @@ actor InferenceEngine {
             container,
             instructions: instructions,
             history: history,
-            generateParameters: Self.generateParameters(for: tier))
+            generateParameters: Self.generateParameters(for: tier),
+            processing: .init(resize: CGSize(width: 512, height: 512)))
         self.session = session
-        return run(session: session, prompt: prompt, recordInHistory: true)
+        return run(session: session, prompt: prompt, images: imageURL.map { [.url($0)] } ?? [], recordInHistory: true)
     }
 
     /// Generate once against a fresh session, outside the conversation. Used by
@@ -197,11 +205,11 @@ actor InferenceEngine {
         var parameters = Self.generateParameters(for: tier)
         parameters.maxTokens = maxTokens
         let session = ChatSession(container, instructions: nil, generateParameters: parameters)
-        return run(session: session, prompt: prompt, recordInHistory: false)
+        return run(session: session, prompt: prompt, images: [], recordInHistory: false)
     }
 
     private func run(
-        session: ChatSession, prompt: String, recordInHistory: Bool
+        session: ChatSession, prompt: String, images: [UserInput.Image], recordInHistory: Bool
     ) -> AsyncThrowingStream<GenerationEvent, Error> {
         AsyncThrowingStream { continuation in
             guard let loaded else {
@@ -222,7 +230,7 @@ actor InferenceEngine {
                 var reply = ""
                 do {
                     try Task.checkCancellation()
-                    for try await event in session.streamDetails(to: prompt) {
+                    for try await event in session.streamDetails(to: prompt, images: images) {
                         switch event {
                         case .chunk(let text):
                             if firstToken == nil { firstToken = ContinuousClock.now - started }
