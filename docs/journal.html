@@ -1,0 +1,351 @@
+<title>Lantern Dev Journal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #e9ecef;
+    --plate: #f6f7f8;
+    --ink: #161a1f;
+    --muted: #57616c;
+    --rule: #c3cad2;
+    --steel: #8a949f;
+    --accent: #2b5fd9;
+    --flame: #e8942e;
+    --note: #dde3ea;
+    --display: "Barlow Semi Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #101317;
+      --plate: #171b20;
+      --ink: #e4e8ec;
+      --muted: #9aa4ae;
+      --rule: #2c333b;
+      --steel: #6d7782;
+      --accent: #6c96ff;
+      --flame: #ffb35a;
+      --note: #1d232a;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #101317;
+    --plate: #171b20;
+    --ink: #e4e8ec;
+    --muted: #9aa4ae;
+    --rule: #2c333b;
+    --steel: #6d7782;
+    --accent: #6c96ff;
+    --flame: #ffb35a;
+    --note: #1d232a;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 18px;
+    line-height: 1.6;
+    padding-inline: 16px;
+    padding-block: 0 64px;
+  }
+  .sheet { max-width: 720px; margin: 0 auto; }
+
+  header.plate {
+    margin-top: 32px;
+    background: var(--plate);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 20px;
+    align-items: center;
+  }
+  .mark { width: 56px; height: 56px; }
+  .stamp {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(34px, 7vw, 48px);
+    line-height: 1.02;
+    letter-spacing: 0.01em;
+    margin: 4px 0 6px;
+    text-wrap: balance;
+  }
+  .lede { margin: 0; color: var(--muted); font-size: 17px; }
+  .byline {
+    margin-top: 16px;
+    font-size: 15px;
+    color: var(--muted);
+    border-top: 1px dashed var(--rule);
+    padding-top: 12px;
+  }
+
+  nav.toc {
+    margin: 28px 0 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  nav.toc a { color: var(--accent); text-decoration: none; }
+  nav.toc a:hover, nav.toc a:focus-visible { text-decoration: underline; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  h2 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 28px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    margin: 48px 0 12px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    text-wrap: balance;
+  }
+  h2::after { content: ""; flex: 1; border-bottom: 2px solid var(--rule); transform: translateY(-6px); }
+  h3 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 22px;
+    margin: 32px 0 6px;
+    text-wrap: balance;
+  }
+  p, ul { margin: 0 0 14px; }
+  ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  strong { font-weight: 600; }
+  a { color: var(--accent); }
+
+  /* The log: dated entries, newest first, like a bench notebook. */
+  .log { display: grid; gap: 0; border-left: 2px solid var(--steel); margin-left: 6px; }
+  .entry { position: relative; padding: 0 0 22px 22px; }
+  .entry::before {
+    content: "";
+    position: absolute;
+    left: -7px;
+    top: 7px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--ground);
+    border: 2px solid var(--steel);
+  }
+  .entry.latest::before { background: var(--flame); border-color: var(--flame); }
+  .entry time {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .entry h3 { margin: 2px 0 6px; font-size: 20px; }
+  .entry ul { margin-bottom: 0; }
+
+  .aside {
+    background: var(--note);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin: 18px 0;
+    font-size: 16px;
+  }
+  .aside .stamp { display: block; margin-bottom: 4px; }
+
+  .spec {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 16px;
+    margin: 8px 0 16px;
+  }
+  .spec-wrap { overflow-x: auto; }
+  .spec th, .spec td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  .spec th { font-family: var(--display); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; font-size: 14px; color: var(--muted); }
+  .num { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  footer { margin-top: 56px; font-size: 14px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 14px; }
+
+  @media (max-width: 480px) {
+    body { font-size: 17px; }
+    header.plate { grid-template-columns: 1fr; padding: 20px; }
+  }
+</style>
+
+<div class="sheet">
+  <header class="plate">
+    <svg class="mark" viewBox="0 0 64 64" role="img" aria-label="Lantern mark">
+      <path d="M22 17a10 10 0 0 1 20 0" fill="none" stroke="var(--ink)" stroke-width="3"/>
+      <rect x="18" y="17" width="28" height="4" fill="var(--ink)"/>
+      <rect x="20" y="21" width="24" height="31" rx="5" fill="none" stroke="var(--ink)" stroke-width="3"/>
+      <rect x="18" y="52" width="28" height="4" fill="var(--ink)"/>
+      <path d="M32 29c5 5 6 9 4 12a5 5 0 0 1-8 0c-2-3-1-7 4-12z" fill="var(--flame)"/>
+    </svg>
+    <div>
+      <div class="stamp">Lantern · offline AI · dev journal</div>
+      <h1>Why Lantern is the way it is</h1>
+      <p class="lede">What changed day to day, and the reasons behind it, for whoever joins, especially on design.</p>
+    </div>
+    <p class="byline" style="grid-column: 1 / -1; margin-bottom: 0;">Rabiat, written with Claude from my own messages while building. If a line doesn't sound like me, it's wrong; change it.</p>
+  </header>
+
+  <nav class="toc" aria-label="Sections">
+    <a href="#log">Log</a>
+    <a href="#why">Why it exists</a>
+    <a href="#who">Who it's for</a>
+    <a href="#transparency">Transparency</a>
+    <a href="#eco">The eco side</a>
+    <a href="#look">The look</a>
+    <a href="#next">Design next</a>
+    <a href="#decisions">Decisions</a>
+    <a href="#learned">Learned</a>
+  </nav>
+
+  <h2 id="log">Log</h2>
+  <div class="log">
+    <article class="entry latest">
+      <time datetime="2026-09-28">Sun 28 Sep 2026</time>
+      <h3>The Mac becomes a Mac, photos fixed, About you</h3>
+      <ul>
+        <li>The laptop version was the phone screen on a laptop. Now it has a sidebar of chats, a reading column, Return to send, menu shortcuts, a real Settings window and its own icon.</li>
+        <li>A small gauge in the sidebar corner shows heat, the graphics chip, memory and battery. Hover for a sentence, click for a minute of history. Only what macOS really lets an app read.</li>
+        <li>Photo replies that said only "I" or "The The The" were two bugs: we showed the model the question twice with an empty answer between, and the MLX library lost track of word positions after a picture. Both fixed.</li>
+        <li>About you: an optional name, age, how I like answers, and up to twelve things to remember. Tiny, on the device, left out of backups.</li>
+        <li>The app now reads every device as itself: iPad says iPad, Intel Macs are turned away politely, the Mac's real memory limit is used.</li>
+        <li>Water saved now shows before energy: about 0.26 mL of cooling water per cloud reply, Google's 2025 measured figure, the lower one on purpose.</li>
+        <li>Experienced users can add their own model from Hugging Face, behind Settings, Show advanced options. It has to be MLX format, 8B or smaller, and pass the same green light. Tested end to end with Gemma 3 1B, which also showed that some models end a turn with a marker they don't declare, so Lantern now reads those too.</li>
+        <li>Started this journal and the Figma file for whoever picks up design, with the workshop direction written down as a brief.</li>
+        <li>Asked what Android would take: the design and personas carry over, the engine and app get rebuilt (llama.cpp or Google's LiteRT, Kotlin). A few weeks for a first version.</li>
+        <li>Builds 2, 3 and 4 to TestFlight.</li>
+      </ul>
+    </article>
+    <article class="entry">
+      <time datetime="2026-09-27">Sat 27 Sep 2026</time>
+      <h3>Pictures, the App Store, and build 1</h3>
+      <ul>
+        <li>Lantern can look at a photo (SmolVLM, Qwen2-VL) and draw one from text (SD-Turbo), all on the phone. No video: phones can't do it well yet.</li>
+        <li>Moved to the paid developer team, named it "Lantern: Offline AI", and put build 1 on TestFlight.</li>
+        <li>The keyboard kept covering the text box on a real phone, so the app now tracks the keyboard by hand.</li>
+      </ul>
+    </article>
+    <article class="entry">
+      <time datetime="2026-09-18">Thu 18 Sep 2026</time>
+      <h3>A look of its own, and Apple Intelligence</h3>
+      <ul>
+        <li>Plain San Francisco type and a trusted blue. The amber read as Ember's, and I didn't like the rounded font. The flame stayed warm.</li>
+        <li>"Did you know" facts on new chats, the savings counter in Settings, deleting chats, and the first Mac build.</li>
+        <li>Apple's built-in model became a second engine, with a measured comparison against ours.</li>
+      </ul>
+    </article>
+    <article class="entry">
+      <time datetime="2026-09-16">Tue 16 Sep 2026</time>
+      <h3>Day one: a model on the phone</h3>
+      <ul>
+        <li>Started Lantern to learn how on-device ML really behaves with MLX. The green light, the model tiers and the benchmark came first, UI last.</li>
+        <li>Personas for being away from home and signal, Wi-Fi-only downloads, and chats that delete themselves after seven days.</li>
+        <li>First aid, roadside and outdoors now answer from reviewed guides bundled in the app.</li>
+      </ul>
+    </article>
+  </div>
+
+  <h2 id="why">Why it exists</h2>
+  <p>I wanted to understand how on-device machine learning actually behaves. The real version, not the demo: how much memory a model takes on a phone, how fast it writes, when it gets hot, when iOS closes it. MLX on Apple silicon was the way in. Lantern is the thing I built to find out, and the numbers it measures are the notes I'll prototype from next.</p>
+  <p>It also had to be useful on its own. I kept picturing the moments when you have no signal and need help anyway: a car that won't start on a back road, a cut that won't stop bleeding, a hike that ran long, a station abroad where you can't read the signs. Every assistant I use goes quiet when the bars go. Lantern is something you carry that still works when you're away from home and the Wi-Fi is gone.</p>
+  <div class="aside">
+    <span class="stamp">Side note</span>
+    The name came from that picture. A lantern is light you carry, and it doesn't care whether there's a grid nearby. A firefly works the same way: it makes its own light from what it carries, no outlet needed. That's the whole idea of running the model on the phone itself.
+  </div>
+
+  <h2 id="who">Who it's for</h2>
+  <p>Anyone with a recent iPhone or a Mac who might end up somewhere without signal, or who just doesn't want their questions leaving the device. The personas are the uses I kept coming back to:</p>
+  <ul>
+    <li><strong>General</strong> for everyday questions, and <strong>Curious mind</strong> for the thing you'd normally search, honest about what it doesn't know.</li>
+    <li><strong>Day out helper</strong> for lists, packing and errands. <strong>Field notes</strong> turns a ramble into a clean list.</li>
+    <li><strong>Homework tutor</strong> explains instead of handing over the answer. <strong>Electronics tutor</strong>, because I wanted one.</li>
+    <li><strong>Roadside</strong>, <strong>First aid</strong> and <strong>Outdoors</strong> for being stranded. They answer from reviewed guides in the app, never from the model's memory, and always start with "call emergency services" and what serious looks like.</li>
+    <li><strong>Travel phrasebook</strong> for being lost in another language, and <strong>Calm companion</strong> for waiting it out somewhere you'd rather not be.</li>
+  </ul>
+  <p>You download what you need while you still have Wi-Fi, then leave. That's why downloads wait for Wi-Fi by default and the app tells you whether it's ready to go offline.</p>
+  <h3>The green light</h3>
+  <p>Before anyone downloads a gigabyte, the app says whether their device can run it: green, amber with a reason, or red with a reason. It reads the real device every time and never assumes a particular iPhone. I didn't want someone waiting on a download only to learn their phone can't hold it. Newer phones get the most, but the smallest model runs on a 4 GB phone.</p>
+  <h3>Unlimited</h3>
+  <p>No account, no key, no quota, no server bill, so there's nothing to ration. Use it as much as you like. That only works because nothing leaves the device.</p>
+
+  <h2 id="transparency">Transparency</h2>
+  <p>Most people using AI have no idea what happens when they press send, and the apps don't try to tell them. I want full transparency, explained for people who aren't used to technical terms. So Lantern shows its work:</p>
+  <ul>
+    <li><strong>How Lantern works, in plain words.</strong> What a model is, why your phone can run this much, what the speed numbers mean, what's stored and for how long, why the phone gets warm.</li>
+    <li><strong>The numbers stay visible.</strong> Words per second, time to the first word, memory, heat. Anyone curious can watch the machine work.</li>
+    <li><strong>"Did you know".</strong> Each new chat opens with one short fact about how this kind of AI works, gone with the first message. Small doses of AI literacy for people who'd never go looking.</li>
+    <li><strong>Estimates come with their assumptions.</strong> When the app says how much water or energy you saved, it says which figures it used and what it left out.</li>
+    <li><strong>The privacy promise is exact.</strong> No data leaves the phone. The only network use is downloading public model weights. If a feature would bend that sentence, it doesn't ship.</li>
+  </ul>
+  <p>I'd rather people trust Lantern because they can see what it's doing than because we told them to.</p>
+
+  <h2 id="eco">The eco side</h2>
+  <p>Every reply from a cloud assistant runs in a data centre that draws power and uses water to stay cool. On the phone, the same work runs on a chip drawing a few watts for a few seconds. I wanted people to see that as a number, so Settings shows what staying on the device has saved: water first, then energy, then something you can picture.</p>
+  <p>The estimates use the lower, more recent published figures on purpose. I'd rather understate the saving than be caught overstating it. The network in between and the servers kept idle for you aren't counted, so the real saving is bigger than the one shown.</p>
+  <div class="spec-wrap">
+    <table class="spec">
+      <thead><tr><th>Per reply</th><th>Figure used</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td>Data-centre energy</td><td class="num">0.3 Wh</td><td>Epoch AI, 2025, typical chat query</td></tr>
+        <tr><td>Data-centre water</td><td class="num">0.26 mL</td><td>Google, 2025, median Gemini text prompt</td></tr>
+        <tr><td>Phone while writing</td><td class="num">6 W</td><td>Typical phone chip under full load</td></tr>
+        <tr><td>Mac while writing</td><td class="num">20 W</td><td>Typical M-series laptop under GPU load</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="look">The look, so far</h2>
+  <ul>
+    <li><strong>Plain San Francisco type.</strong> I tried rounded and didn't like it. Nice and clean.</li>
+    <li><strong>A trusted blue.</strong> The first colour was amber, which read as Ember's. I wanted the colour people already connect with tools they rely on.</li>
+    <li><strong>The fire stays warm.</strong> The flame in the mark is the one warm thing on screen. That's the lantern.</li>
+    <li><strong>The Mac is a Mac app.</strong> Sidebar, reading column, menu shortcuts, and the gauge in the corner.</li>
+  </ul>
+
+  <h2 id="next">Where the design goes next</h2>
+  <p>I see a metal, workshop feel: something that shows the gear and the backend, like building your own device at home rather than buying one off a shelf. The memory bars, the green light, the speed readout and the gauges are already the machine showing itself. The design should lean into that, brushed and honest like a tool bench, while staying calm enough to use when you're stressed on the side of a road.</p>
+  <p>Colour is open. The blue and the warm flame are where we are today, not a rule. What matters more:</p>
+  <ul>
+    <li>Readable in a hurry, in sunlight, by someone who's scared.</li>
+    <li>The machine visible for anyone curious, never in the way for anyone who isn't.</li>
+    <li>Nothing that looks like it's hiding something.</li>
+  </ul>
+
+  <h2 id="decisions">Decisions and why</h2>
+  <ul>
+    <li><strong>Seven-day history.</strong> A chat about a flat tyre on a Tuesday doesn't need to exist in October. Nothing should pile up on the phone, and you can delete any chat sooner.</li>
+    <li><strong>Small default model.</strong> A 1B model fits every supported phone. Bigger ones where they fit, warned where they're tight, nothing above 8B, because above that iOS closes the app.</li>
+    <li><strong>No cloud fallback.</strong> If the model isn't on the device, Lantern says so. It never quietly sends the question somewhere else.</li>
+    <li><strong>Apple Intelligence as a partner.</strong> Apple's built-in model can answer too and writes the summaries that keep long chats going. Only Apple's on-device model, never its cloud one.</li>
+    <li><strong>About you, kept tiny.</strong> Optional, about 200 tokens at most so it never crowds out the chat, on the device only, left out of backups.</li>
+    <li><strong>Your own models, for people who want them.</strong> Experienced users can add a model from Hugging Face. Hidden unless you go looking, and it goes through the same memory checks and green light as everything else.</li>
+  </ul>
+
+  <h2 id="learned">Learned the hard way</h2>
+  <ul>
+    <li>The memory ceiling isn't the phone's RAM. iOS lets one app have roughly half, so the green light reads the real limit and believes it.</li>
+    <li>The keyboard covered the text box twice, with layouts that looked fine in the simulator. Always test on the device.</li>
+    <li>A photo reply that said only "I" was two bugs stacked. Test the path people actually use, not only the engine.</li>
+    <li>Small models loop, invent and forget. Lantern is a fast writing and explaining partner, not a reference, and says so.</li>
+  </ul>
+  <p>The full technical list lives in the README, under "Learnings so far".</p>
+
+  <footer>Newest days go at the top of the log. Source: <span class="num">docs/journal.html</span> in the Lantern repo.</footer>
+</div>
