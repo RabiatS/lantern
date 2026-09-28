@@ -108,6 +108,17 @@ struct ChatView: View {
             if let live = app.live {
                 LiveStrip(live: live)
             }
+            if let progress = app.pictureProgress {
+                HStack(spacing: Theme.Space.s) {
+                    ProgressView().tint(Theme.accent)
+                    Text(progress).font(Theme.readout(.footnote)).foregroundStyle(Theme.ink)
+                    Spacer()
+                    Button("Stop") { app.stopDrawing() }.font(.footnote.weight(.semibold))
+                }
+                .padding(.horizontal, Theme.Space.l)
+                .padding(.vertical, Theme.Space.s)
+                .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            }
             if let context = app.context, context.isHigh, !app.isCompacting {
                 ContextChip(usage: context) { app.compact() }
             }
