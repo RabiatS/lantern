@@ -8,15 +8,25 @@
 # Apple Distribution certificate and the "Lantern App Store" profile, because
 # an App Manager key cannot do cloud signing.
 #
-# Usage: scripts/testflight.sh [build-number]
+# Usage: scripts/testflight.sh [build-number] [ios|mac]
 # The build number defaults to the number of commits on the current branch.
+# The platform defaults to ios. The Mac build uploads the same code as a Mac
+# App Store package, signed with the "Lantern Mac App Store" profile and the
+# Mac Installer Distribution certificate; build numbers count per platform.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 PROJECT=Lantern.xcodeproj
 SCHEME=Lantern
 BUILD_NUMBER="${1:-$(git rev-list --count HEAD)}"
-OUT="build/testflight"
+PLATFORM="${2:-ios}"
+case "$PLATFORM" in
+  ios) DESTINATION='generic/platform=iOS'; PROFILE="Lantern App Store"; INSTALLER="" ;;
+  mac) DESTINATION='generic/platform=macOS'; PROFILE="Lantern Mac App Store"
+       INSTALLER="<key>installerSigningCertificate</key><string>3rd Party Mac Developer Installer</string>" ;;
+  *) echo "platform must be ios or mac"; exit 2 ;;
+esac
+OUT="build/testflight-$PLATFORM"
 ARCHIVE="$OUT/Lantern.xcarchive"
 EXPORT="$OUT/export"
 # Tests run on a plain simulator, never on the developer's own phone.
@@ -40,11 +50,11 @@ xcodebuild test \
   -skipPackagePluginValidation -skipMacroValidation \
   -quiet
 
-echo "==> Archive, build $BUILD_NUMBER"
+echo "==> Archive $PLATFORM, build $BUILD_NUMBER"
 xcodebuild archive \
   -project "$PROJECT" -scheme "$SCHEME" \
   -configuration Release \
-  -destination 'generic/platform=iOS' \
+  -destination "$DESTINATION" \
   -archivePath "$ARCHIVE" \
   -derivedDataPath DerivedData \
   -allowProvisioningUpdates "${AUTH[@]}" \
@@ -68,8 +78,9 @@ cat > "$OUT/ExportOptions.plist" <<PLIST
 	<key>provisioningProfiles</key>
 	<dict>
 		<key>com.rabiats.lanternapp</key>
-		<string>Lantern App Store</string>
+		<string>$PROFILE</string>
 	</dict>
+	$INSTALLER
 	<key>teamID</key>
 	<string>T27289T9P3</string>
 	<key>uploadSymbols</key>
@@ -82,7 +93,7 @@ PLIST
 
 echo "==> Install the App Store profile if the key is available"
 if [[ -f "$ASC_KEY_PATH" ]]; then
-  python3 scripts/asc.py install-profile "Lantern App Store"
+  python3 scripts/asc.py install-profile "$PROFILE"
 fi
 
 echo "==> Export and upload"
@@ -92,4 +103,4 @@ xcodebuild -exportArchive \
   -exportPath "$EXPORT" \
   -allowProvisioningUpdates "${AUTH[@]}"
 
-echo "==> Uploaded build $BUILD_NUMBER. It appears in App Store Connect, TestFlight, after processing."
+echo "==> Uploaded $PLATFORM build $BUILD_NUMBER. It appears in App Store Connect, TestFlight, after processing."
