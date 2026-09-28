@@ -16,6 +16,17 @@ struct SettingsView: View {
                         Label("How Lantern works, in plain words", systemImage: "book.pages")
                             .foregroundStyle(Theme.ink)
                     }
+                    NavigationLink {
+                        AboutYouView()
+                    } label: {
+                        LabeledContent {
+                            Text(app.profile.isActive ? "On" : app.profile.isEmpty ? "Not set" : "Paused")
+                                .foregroundStyle(Theme.muted)
+                        } label: {
+                            Label("About you", systemImage: "person.crop.circle")
+                                .foregroundStyle(Theme.ink)
+                        }
+                    }
                 }
                 .listRowBackground(Theme.surface)
                 backendSection
@@ -30,9 +41,12 @@ struct SettingsView: View {
             .scrollContentBackground(.hidden)
             .background(Theme.background)
             .navigationTitle("Lantern")
+            #if os(iOS)
+            // The Mac shows this in its own Settings window, which closes itself.
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
+            #endif
         }
         .tint(Theme.accent)
         .onAppear { app.refreshDevice() }
@@ -109,9 +123,9 @@ struct SettingsView: View {
                 readout("About the same as", String(format: "%.1f phone charges", app.impact.phoneChargesSaved))
             }
         } header: {
-            Text("What staying on this phone has saved")
+            Text("What staying on this \(Platform.device) has saved")
         } footer: {
-            Text("Replies and words are counted. Energy is an estimate: a data-centre reply at about 0.3 Wh, against this phone at about 6 W for the seconds it spent writing. The assumptions are on the \"How Lantern works\" page.")
+            Text("Replies and words are counted. Energy is an estimate: a data-centre reply at about 0.3 Wh, against this \(Platform.device) at about \(Int(Platform.wattsWhileGenerating)) W for the seconds it spent writing. The assumptions are on the \"How Lantern works\" page.")
         }
         .listRowBackground(Theme.surface)
     }
@@ -120,6 +134,7 @@ struct SettingsView: View {
 
     private var phoneSection: some View {
         Section {
+            readout("Hardware", app.device.hardwareModel)
             readout("Memory", app.device.physicalMemory.byteText)
             readout("App may use now", app.device.availableMemory.byteText)
             readout("Free disk", app.device.freeDisk.byteText)
@@ -135,9 +150,13 @@ struct SettingsView: View {
                     .foregroundStyle(app.readyForOffline ? .green : Theme.warn)
             }
         } header: {
-            Text("This phone")
+            Text("This \(Platform.device)")
         } footer: {
+            #if os(macOS)
+            Text("\"App may use now\" is how much memory macOS recommends the graphics chip keep in use at once on this Mac.")
+            #else
             Text("\"App may use now\" is the ceiling iOS enforces for this app. It falls as other apps take memory.")
+            #endif
         }
         .listRowBackground(Theme.surface)
     }
@@ -156,7 +175,9 @@ struct SettingsView: View {
     private var modelsSection: some View {
         Section {
             @Bindable var store = app.store
-            Toggle("Download on Wi-Fi only", isOn: $store.wifiOnly)
+            if Platform.hasCellular {
+                Toggle("Download on Wi-Fi only", isOn: $store.wifiOnly)
+            }
             ForEach(ModelCatalog.all) { entry in
                 ModelRow(entry: entry)
             }
@@ -218,7 +239,7 @@ struct SettingsView: View {
         } header: {
             Text("Drawing pictures")
         } footer: {
-            Text("Stability's SD-Turbo draws a 512 pixel picture in four steps on this phone. It is the heaviest thing in the app: the chat model steps aside while it runs, and on 6 GB phones it is compressed and unloaded after each picture. Type a description, then choose \"Draw a picture from this text\" from the camera button.")
+            Text("Stability's SD-Turbo draws a 512 pixel picture in four steps on this \(Platform.device). It is the heaviest thing in the app: the chat model steps aside while it runs, and on 6 GB phones it is compressed and unloaded after each picture. Type a description, then choose \"Draw a picture from this text\" from the camera button.")
         }
         .listRowBackground(Theme.surface)
     }
@@ -292,14 +313,14 @@ struct SettingsView: View {
             .confirmationDialog("Delete all chats?", isPresented: $confirmDeleteAll, titleVisibility: .visible) {
                 Button("Delete all", role: .destructive) { app.deleteAllConversations() }
             } message: {
-                Text("Removes every chat from this phone now.")
+                Text("Removes every chat from this \(Platform.device) now.")
             }
             readout("Version", Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
             Link("Source on GitHub", destination: URL(string: "https://github.com/RabiatS/lantern")!)
         } header: {
             Text("About")
         } footer: {
-            Text("Runs entirely on this phone with MLX. The only network use is downloading public model weights.")
+            Text("Runs entirely on this \(Platform.device) with MLX. The only network use is downloading public model weights.")
         }
         .listRowBackground(Theme.surface)
     }

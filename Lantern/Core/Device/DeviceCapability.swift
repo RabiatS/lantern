@@ -2,8 +2,9 @@ import Foundation
 import Metal
 
 /// The green light. Before anyone downloads a gigabyte, the app measures the
-/// phone and says whether a model will run here. Every number is read live: RAM,
-/// what this process may still allocate, free disk, and whether Metal is present.
+/// device it is running on and says whether a model will run here. Every number
+/// is read live: RAM, what this process may use, free disk, the GPU and the
+/// hardware model. Nothing assumes a particular iPhone.
 nonisolated struct DeviceReport: Sendable, Equatable {
     let physicalMemory: Int64
     /// What this process can still allocate right now. This is the number jetsam
@@ -17,6 +18,12 @@ nonisolated struct DeviceReport: Sendable, Equatable {
     /// The GPU as Metal names it, like "Apple A19 Pro GPU", and its family.
     let gpuName: String
     let gpuFamily: String
+    /// Whether the GPU is Apple's own. MLX runs only on Apple silicon, so an
+    /// Intel Mac with an AMD or Intel GPU has Metal but cannot run a model.
+    var hasAppleGPU: Bool = true
+    /// The hardware model as the system reports it, like "iPhone17,1",
+    /// "iPad16,3" or "Mac16,7". Shown so a tester can see which device was read.
+    var hardwareModel: String = ""
 }
 
 /// Whether one model should be offered on this device.
@@ -71,6 +78,9 @@ nonisolated enum DeviceCapability {
         guard report.hasMetal else {
             return .no("This device has no Metal GPU, which the model runs on.")
         }
+        if !report.hasAppleGPU {
+            return .no("This Mac has an Intel processor. Lantern's models need Apple silicon: an M1 or newer.")
+        }
         if report.isSimulator {
             return .no("MLX does not run in the iOS Simulator. Use a real iPhone.")
         }
@@ -99,14 +109,17 @@ nonisolated enum DeviceCapability {
             needGB, haveGB))
     }
 
-    /// Read the phone. Safe to call often; nothing here is expensive.
+    /// Read this device. Safe to call often; nothing here is expensive.
     static func current() -> DeviceReport {
         let physical = Int64(ProcessInfo.processInfo.physicalMemory)
+        let device = MTLCreateSystemDefaultDevice()
         #if os(iOS)
         let available = Int64(os_proc_available_memory())
         #else
-        // A Mac has no per-app ceiling of the iOS kind; treat most of RAM as usable.
-        let available = physical * 3 / 4
+        // A Mac has no per-app ceiling of the iOS kind. The limit that matters
+        // is how much memory Metal recommends the GPU keep in use at once, which
+        // the system works out from this Mac's RAM.
+        let available = device.map { Int64($0.recommendedMaxWorkingSetSize) } ?? physical * 3 / 4
         #endif
         let free: Int64 = {
             let url = URL.applicationSupportDirectory
@@ -118,7 +131,6 @@ nonisolated enum DeviceCapability {
         #else
         let simulator = false
         #endif
-        let device = MTLCreateSystemDefaultDevice()
         return DeviceReport(
             physicalMemory: physical,
             availableMemory: available,
@@ -128,13 +140,34 @@ nonisolated enum DeviceCapability {
             tier: tier(forPhysicalMemory: physical),
             thermalState: ProcessInfo.processInfo.thermalState,
             gpuName: device?.name ?? "none",
-            gpuFamily: gpuFamily(of: device)
+            gpuFamily: gpuFamily(of: device),
+            hasAppleGPU: device?.supportsFamily(.apple6) ?? false,
+            hardwareModel: hardwareModel()
         )
+    }
+
+    /// "iPhone17,1", "iPad16,3", "Mac16,7". In the simulator, the device being simulated.
+    static func hardwareModel() -> String {
+        if let simulated = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] { return simulated }
+        #if os(macOS)
+        let key = "hw.model"
+        #else
+        let key = "hw.machine"
+        #endif
+        var size = 0
+        guard sysctlbyname(key, nil, &size, nil, 0) == 0, size > 0 else { return "unknown" }
+        var bytes = [CChar](repeating: 0, count: size)
+        guard sysctlbyname(key, &bytes, &size, nil, 0) == 0 else { return "unknown" }
+        return String(decoding: bytes.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
     /// The newest Apple GPU family the device supports, as a plain label.
     static func gpuFamily(of device: MTLDevice?) -> String {
         guard let device else { return "none" }
+        // The SDK does not say which chips Apple 10 and 11 cover, so they are
+        // named by number; the chip name itself is shown beside this.
+        if device.supportsFamily(.apple11) { return "Apple 11" }
+        if device.supportsFamily(.apple10) { return "Apple 10" }
         if device.supportsFamily(.apple9) { return "Apple 9 (A17 Pro, M3 and newer)" }
         if device.supportsFamily(.apple8) { return "Apple 8 (A15, A16, M2)" }
         if device.supportsFamily(.apple7) { return "Apple 7 (A14, M1)" }

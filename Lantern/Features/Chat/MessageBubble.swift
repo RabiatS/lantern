@@ -75,8 +75,17 @@ struct MessageBubble: View {
             .background(
                 isUser ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.surface),
                 in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
+            #if os(macOS)
+            // Selectable on the Mac, where people drag across text to copy part
+            // of it. Left off on the phone, where it made scrolling stutter.
+            .textSelection(.enabled)
+            #endif
             .contextMenu {
                 Button("Copy", systemImage: "doc.on.doc") { Clipboard.copy(text) }
+                Button("Remember this", systemImage: "person.crop.circle.badge.plus") {
+                    app.profile.remember(text)
+                    app.profileChanged()
+                }
             }
     }
 

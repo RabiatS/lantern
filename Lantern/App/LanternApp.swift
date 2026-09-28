@@ -17,12 +17,22 @@ struct LanternApp: App {
         WindowGroup {
             root
                 #if os(macOS)
-                .frame(minWidth: 520, minHeight: 640)
+                .frame(minWidth: 720, minHeight: 560)
                 .onAppear { WindowSnapshot.scheduleIfRequested() }
                 #endif
         }
         #if os(macOS)
-        .defaultSize(width: 640, height: 860)
+        .defaultSize(width: 1100, height: 780)
+        .commands { LanternCommands(app: app) }
+        #endif
+
+        #if os(macOS)
+        // Lantern > Settings… (Command-Comma), the Mac's own place for this.
+        Settings {
+            SettingsView()
+                .environment(app)
+                .frame(width: 620, height: 720)
+        }
         #endif
     }
 
@@ -30,6 +40,35 @@ struct LanternApp: App {
         RootView().environment(app)
     }
 }
+
+#if os(macOS)
+/// The menu bar: File > New Chat, and a Chat menu with Stop and the personas,
+/// each with the shortcut a Mac user would reach for.
+struct LanternCommands: Commands {
+    let app: AppState
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Chat") { app.newConversation() }
+                .keyboardShortcut("n")
+        }
+        CommandMenu("Chat") {
+            Button("Stop Writing") { app.stop() }
+                .keyboardShortcut(".")
+                .disabled(!app.isGenerating)
+            Button("Compact Chat") { app.compact() }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
+                .disabled(app.isBusy || app.current.messages.isEmpty)
+            Divider()
+            Picker("Persona", selection: Binding(get: { app.persona }, set: { app.persona = $0 })) {
+                ForEach(Persona.allCases, id: \.self) { persona in
+                    Text(persona.title).tag(persona)
+                }
+            }
+        }
+    }
+}
+#endif
 
 #if os(macOS) && DEBUG
 /// `--snapshot=<path.png>` writes a picture of the first window a few seconds

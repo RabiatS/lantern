@@ -6,14 +6,14 @@ import Foundation
 nonisolated enum Facts {
     static let all: [String] = [
         "A language model does not look things up. It predicts the next word piece, over and over, from patterns it learned in training.",
-        "The model on this phone is a table of about a billion numbers. Each reply is those numbers being multiplied together very quickly.",
+        "The model on this \(Platform.device) is a table of about a billion numbers. Each reply is those numbers being multiplied together very quickly.",
         "A \"token\" is a piece of a word. \"Lantern\" might be one token; \"unbelievably\" might be three. Speed is measured in tokens per second.",
         "The model has no memory between chats. What it knows about this conversation is only what is on screen, fed back in each turn.",
-        "\"4-bit\" means each number in the model is stored in four bits instead of sixteen. That is why a model that needs a server can fit in a phone.",
+        "\"4-bit\" means each number in the model is stored in four bits instead of sixteen. That is why a model that needs a server can fit in a \(Platform.device).",
         "The same question gets different answers because the model rolls a weighted die for each word. Turning that off would make it repeat itself.",
         "The model only knows about the world up to the day its training text was collected. It cannot know today's weather, or today's news.",
         "Small models are confidently wrong more often than large ones. That is why the safety personas here answer from a written guide instead.",
-        "Your phone's graphics chip does the model's arithmetic. It was built for games and photos, and it happens to be good at this too.",
+        "Your \(Platform.device)'s graphics chip does the model's arithmetic. It was built for games and photos, and it happens to be good at this too.",
         "Memory is the limit, not speed. The model's numbers plus its notes on the conversation have to fit in the memory iOS lets one app use.",
         "The first word of a reply takes longest. The model reads the whole conversation first, then writes one word at a time.",
         "Longer chats get slower. Each new word has to look back at every word before it.",
@@ -30,7 +30,7 @@ nonisolated enum Facts {
         "Models are best at language: rewriting, summarising, explaining, drafting. Treat facts from them as a lead, not an answer.",
         "The warmth you feel after a long session is the graphics chip working flat out. iOS slows it down before it gets too hot.",
         "\"Hallucination\" is the polite word for the model inventing something that sounds right. Smaller models do it more; asking for sources does not stop it.",
-        "The weights on this phone were checked byte for byte against the publisher's checksum when they were downloaded.",
+        "The weights on this \(Platform.device) were checked byte for byte against the publisher's checksum when they were downloaded.",
         "The model was trained mostly on English text, so it is better in English than in other languages, and better at common topics than rare ones.",
         "A one-billion-number model can write a reply in the time it takes a server request to travel to a data centre and back.",
     ]

@@ -21,6 +21,9 @@ struct WelcomeView: View {
                             .tint(Theme.accent)
                     }
                     .padding(Theme.Space.l)
+                    // A readable column on a wide Mac window; no effect on a phone.
+                    .frame(maxWidth: 560)
+                    .frame(maxWidth: .infinity)
                 }
             }
             #if os(iOS)
@@ -36,7 +39,7 @@ struct WelcomeView: View {
             Text("Lantern")
                 .font(.system(size: 40, weight: .bold))
                 .foregroundStyle(Theme.ink)
-            Text("A light you carry. Works with no signal, keeps everything on this phone.")
+            Text("A light you carry. Works with no signal, keeps everything on this \(Platform.device).")
                 .font(.body)
                 .foregroundStyle(Theme.muted)
                 .multilineTextAlignment(.center)
@@ -46,7 +49,7 @@ struct WelcomeView: View {
     private var phoneCard: some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
-                Label("This iPhone", systemImage: "iphone")
+                Label("This \(Platform.product)", systemImage: Platform.symbol)
                     .font(Theme.heading(.headline))
                     .foregroundStyle(Theme.ink)
                 Text(phoneSummary)
@@ -57,7 +60,9 @@ struct WelcomeView: View {
     }
 
     private var phoneSummary: String {
-        let memory = app.device.physicalMemory.byteText
+        let chip = app.device.gpuName.replacingOccurrences(of: " GPU", with: "")
+        let memory = "\(chip), \(app.device.physicalMemory.byteText)"
+        if !app.device.hasAppleGPU { return "\(memory) of memory. Lantern's models need Apple silicon, an M1 or newer." }
         switch app.device.tier {
         case .unsupported: return "\(memory) of memory. Nothing in the catalog fits with room to spare."
         case .compact: return "\(memory) of memory. Runs the 1B class comfortably."
@@ -112,7 +117,7 @@ struct WelcomeView: View {
                     DownloadProgress(entry: chosen)
                 }
             }
-            Text(app.store.wifiOnly ? "Downloads on Wi-Fi only. After that, no network is ever needed." : "Downloads on any connection. After that, no network is ever needed.")
+            Text(!Platform.hasCellular ? "Downloads once. After that, no network is ever needed." : app.store.wifiOnly ? "Downloads on Wi-Fi only. After that, no network is ever needed." : "Downloads on any connection. After that, no network is ever needed.")
                 .font(.caption)
                 .foregroundStyle(Theme.muted)
                 .multilineTextAlignment(.center)
@@ -125,7 +130,7 @@ struct WelcomeView: View {
                 .buttonStyle(.bordered)
                 .tint(Theme.accent)
                 .controlSize(.large)
-                Text("Apple's built-in model is already on this phone. You can download a Lantern model later and compare them.")
+                Text("Apple's built-in model is already on this \(Platform.device). You can download a Lantern model later and compare them.")
                     .font(.caption)
                     .foregroundStyle(Theme.muted)
                     .multilineTextAlignment(.center)

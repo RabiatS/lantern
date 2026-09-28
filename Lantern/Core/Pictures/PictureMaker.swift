@@ -54,7 +54,7 @@ nonisolated enum PictureModel {
     static func verdict(report: DeviceReport) -> Verdict {
         guard report.hasMetal else { return .no("This device has no Metal GPU.") }
         if report.isSimulator { return .no("MLX does not run in the iOS Simulator. Use a real iPhone.") }
-        if report.tier < .standard { return .no("Drawing pictures needs a 6 GB iPhone or better.") }
+        if report.tier < .standard { return .no("Drawing pictures needs a \(Platform.product) with 6 GB of memory or more.") }
         let need = estimatedPeakBytes(tier: report.tier)
         if report.freeDisk < DeviceCapability.requiredDiskBytes(for: totalBytes) {
             return .caution(String(format: "Needs about %.1f GB free on disk.", Double(DeviceCapability.requiredDiskBytes(for: totalBytes)) / Double(1 << 30)))

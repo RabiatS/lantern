@@ -14,6 +14,7 @@ nonisolated struct ConversationStore: Sendable {
     init(directory: URL = URL.applicationSupportDirectory.appending(path: "Conversations", directoryHint: .isDirectory)) {
         self.directory = directory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        BackupExclusion.apply(to: directory)
     }
 
     func loadAll() -> [Conversation] {

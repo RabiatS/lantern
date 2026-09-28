@@ -24,6 +24,7 @@ final class AppState {
     let pressure = MemoryPressureMonitor()
     let hangs = HangMonitor()
     let impact = Impact()
+    let profile = Profile()
     /// The "did you know" line for the current empty chat. Re-rolled per new chat.
     private(set) var fact = Facts.random()
     private let conversations: ConversationStore
@@ -99,7 +100,7 @@ final class AppState {
                         let name = try images.save(image)
                         current.messages.append(ChatMessage(
                             role: .assistant,
-                            text: String(format: "Drawn on this phone in %.0f seconds.", seconds),
+                            text: String(format: "Drawn on this \(Platform.device) in %.0f seconds.", seconds),
                             imageName: name))
                         persist()
                     }
@@ -153,6 +154,9 @@ final class AppState {
             return ("\(self.engineState)", self.isGenerating, self.isCompacting)
         }
         hangs.start()
+        #if DEBUG
+        EngineProbe.runIfRequested(app: self)
+        #endif
         Task.detached(priority: .utility) { [weak self] in
             let library = GuideLibrary()
             await MainActor.run { self?.library = library }
@@ -162,10 +166,14 @@ final class AppState {
     #if DEBUG
     private func seedPreview() {
         persona = .firstAid
+        #if targetEnvironment(simulator)
+        // The simulator cannot report a real phone, so App Store screenshots use
+        // a stand-in 12 GB iPhone. On a real device or a Mac the live reading stays.
         device = DeviceReport(
             physicalMemory: 12_294_000_000, availableMemory: 6_388_000_000, freeDisk: 729 << 30,
             hasMetal: true, isSimulator: false, tier: .pro, thermalState: .nominal,
-            gpuName: "Apple A19 Pro GPU", gpuFamily: "Apple 9 (A17 Pro, M3 and newer)")
+            gpuName: "Apple A19 Pro GPU", gpuFamily: "Apple 10", hardwareModel: "iPhone18,1")
+        #endif
         appleStatus = .available
         store.seedPreviewInstalled([ModelCatalog.qwen2_5_1_5B, ModelCatalog.llama3_2_1B, ModelCatalog.qwen2VL2B])
         selectedEntry = ModelCatalog.qwen2_5_1_5B
@@ -266,11 +274,46 @@ final class AppState {
 
     // MARK: Loading
 
+    /// The persona's instructions, with the About you notes after them when
+    /// there are any. Every engine is told the same thing.
+    var instructions: String {
+        guard let block = profile.promptBlock else { return persona.instructions }
+        return persona.instructions + "\n\n" + block
+    }
+
+    /// Call after About you changes, so the next reply is written with it.
+    func profileChanged() {
+        resetEngineConversation()
+    }
+
+    /// Where a message's picture lives, for rebuilding a conversation with it.
+    private var pictureURL: @Sendable (String) -> URL {
+        let images = images
+        return { images.url(for: $0) }
+    }
+
+    /// The conversation as the model should be told it: finished turns only.
+    /// The turn being answered goes to the model as the prompt, so it must not
+    /// also sit in the history, and an empty reply there teaches the model to
+    /// say almost nothing. Both happened whenever a model loaded mid-send, such
+    /// as the switch to a vision model when a photo is attached: the reply was "I".
+    private var settledHistory: [ChatMessage] {
+        var messages = current.messages
+        if let id = streamingMessageId, let index = messages.firstIndex(where: { $0.id == id }) {
+            messages.removeSubrange(max(0, index - 1)...)
+        }
+        return messages.filter { message in
+            guard message.role == .assistant else { return true }
+            let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !text.isEmpty && !text.hasPrefix("(no reply:")
+        }
+    }
+
     /// Load the selected model if it is not already resident. Reload on demand is
     /// this: after a pressure unload the next send lands here.
     func ensureLoaded() async throws {
         if usingApple {
-            await apple.beginConversation(instructions: persona.instructions, history: current.messages)
+            await apple.beginConversation(instructions: instructions, history: settledHistory)
             return
         }
         guard store.installedModel(for: selectedEntry) != nil else {
@@ -283,7 +326,7 @@ final class AppState {
         try await engine.load(selectedEntry, from: store.directory(for: selectedEntry), tier: device.tier)
         lastLoadSeconds = Self.seconds(ContinuousClock.now - started)
         unloadedByPressure = false
-        try await engine.beginConversation(instructions: persona.instructions, history: current.messages)
+        try await engine.beginConversation(instructions: instructions, history: settledHistory, pictureURL: pictureURL)
         await syncEngineState()
     }
 
@@ -340,12 +383,12 @@ final class AppState {
     /// Point the engine at the conversation on screen. Cheap: the KV cache is
     /// dropped and rebuilt from the message list on the next send.
     private func resetEngineConversation() {
-        let messages = current.messages
-        let instructions = persona.instructions
+        let messages = settledHistory
+        let instructions = self.instructions
         Task {
             await apple.beginConversation(instructions: instructions, history: messages)
             if await engine.loadedEntry == selectedEntry {
-                try? await engine.beginConversation(instructions: instructions, history: messages)
+                try? await engine.beginConversation(instructions: instructions, history: messages, pictureURL: pictureURL)
             }
             await engine.dropContext()
         }
@@ -601,7 +644,7 @@ final class AppState {
                 lastBenchmark = report
                 benchmarks[kind] = report
                 // The benchmark's sessions were throwaway; put the conversation back.
-                try await engine.beginConversation(instructions: persona.instructions, history: current.messages)
+                try await engine.beginConversation(instructions: instructions, history: settledHistory, pictureURL: pictureURL)
             } catch is CancellationError {
                 // Stopped by the user.
             } catch {

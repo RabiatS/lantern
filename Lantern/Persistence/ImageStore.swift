@@ -13,6 +13,7 @@ nonisolated struct ImageStore: Sendable {
     init(directory: URL = URL.applicationSupportDirectory.appending(path: "Images", directoryHint: .isDirectory)) {
         self.directory = directory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        BackupExclusion.apply(to: directory)
     }
 
     func url(for name: String) -> URL {

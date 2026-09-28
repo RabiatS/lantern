@@ -58,9 +58,9 @@ final class Impact {
     /// is used so the saving is not overstated.
     static let cloudWattHoursPerReply = 0.3
 
-    /// Power the phone draws while the model writes, in watts. A phone SoC
-    /// under sustained GPU load sits around four to eight watts; six is used.
-    static let phoneWattsWhileGenerating = 6.0
+    /// Power the device draws while the model writes, in watts. Six for a
+    /// phone, twenty for a Mac; the reasoning is in Platform.
+    static let phoneWattsWhileGenerating = Platform.wattsWhileGenerating
 
     /// Watt-hours the phone spent on all replies so far.
     var phoneWattHours: Double { Self.phoneWattsWhileGenerating * generationSeconds / 3600 }

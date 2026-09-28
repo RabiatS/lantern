@@ -5,7 +5,7 @@ import Foundation
 /// On macOS, AppKit treats any bare argument as a document to open, and a
 /// SwiftUI app launched "with documents" never opens its plain window. So the
 /// screenshot flags take the value with an equals sign, never as a second word.
-enum LaunchArguments {
+nonisolated enum LaunchArguments {
     static func value(for key: String) -> String? {
         #if DEBUG
         let prefix = "--\(key)="

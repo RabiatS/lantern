@@ -80,7 +80,7 @@ struct HistorySheet: View {
                     dismiss()
                 }
             } message: {
-                Text("This removes every chat from this phone now, instead of waiting \(ConversationStore.retentionDays) days.")
+                Text("This removes every chat from this \(Platform.device) now, instead of waiting \(ConversationStore.retentionDays) days.")
             }
         }
         .tint(Theme.accent)

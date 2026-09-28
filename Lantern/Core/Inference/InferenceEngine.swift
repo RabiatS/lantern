@@ -92,6 +92,12 @@ actor InferenceEngine {
     private var tier: DeviceTier = .standard
     private var instructions: String?
     private var history: [Chat.Message] = []
+    /// Whether a picture is part of the conversation. After a picture turn the
+    /// next text turn rebuilds the session with the picture in its history, so
+    /// Qwen2-VL works out every position in one pass. Carrying on from the cache
+    /// instead leaves the text after the picture at the wrong positions, which
+    /// the library does not correct until a later release.
+    private var conversationHasImage = false
     private var generation: Task<Void, Never>?
     private(set) var contextTokens = 0
 
@@ -155,16 +161,28 @@ actor InferenceEngine {
 
     /// Start (or restart) a conversation. Past turns are prefilled on the first
     /// send rather than now.
-    func beginConversation(instructions: String?, history: [ChatMessage]) async throws {
+    /// `pictureURL` finds the file for a message's picture, so a vision model
+    /// sees earlier pictures again when the conversation is rebuilt.
+    func beginConversation(
+        instructions: String?, history: [ChatMessage], pictureURL: (@Sendable (String) -> URL)? = nil
+    ) async throws {
         guard container != nil else { throw EngineError.noModelLoaded }
         self.instructions = instructions
+        let sees = loaded?.kind == .vision
         self.history = history.compactMap { message in
             switch message.role {
-            case .user: .user(message.text)
-            case .assistant: .assistant(message.text)
-            case .system: nil
+            case .user:
+                let pictures: [UserInput.Image] = if sees, let name = message.imageName, let pictureURL {
+                    [.url(pictureURL(name))]
+                } else {
+                    []
+                }
+                return .user(message.text, images: pictures)
+            case .assistant: return .assistant(message.text)
+            case .system: return nil
             }
         }
+        conversationHasImage = self.history.contains { !$0.images.isEmpty }
         session = nil
         await recountContext()
     }
@@ -173,6 +191,11 @@ actor InferenceEngine {
         var parameters = GenerateParameters(temperature: 0.6, topP: 0.9)
         parameters.maxTokens = InferenceLimits.maxGeneratedTokens
         parameters.maxKVSize = InferenceLimits.maxKVTokens(for: tier)
+        #if DEBUG
+        if let temperature = LaunchArguments.value(for: "temp").flatMap(Float.init) { parameters.temperature = temperature }
+        if LaunchArguments.has("no-kv-limit") { parameters.maxKVSize = nil }
+        if let penalty = LaunchArguments.value(for: "repeat").flatMap(Float.init) { parameters.repetitionPenalty = penalty }
+        #endif
         return parameters
     }
 
@@ -186,14 +209,25 @@ actor InferenceEngine {
         guard let container else {
             return AsyncThrowingStream { $0.finish(throwing: EngineError.noModelLoaded) }
         }
+        if imageURL == nil, conversationHasImage { self.session = nil }
         let session = self.session ?? ChatSession(
             container,
             instructions: instructions,
             history: history,
             generateParameters: Self.generateParameters(for: tier),
-            processing: .init(resize: CGSize(width: 512, height: 512)))
+            processing: Self.imageProcessing)
         self.session = session
         return run(session: session, prompt: prompt, images: imageURL.map { [.url($0)] } ?? [], recordInHistory: true)
+    }
+
+    static var imageProcessing: UserInput.Processing {
+        #if DEBUG
+        if let size = LaunchArguments.value(for: "resize") {
+            if size == "none" { return .init() }
+            if let side = Double(size) { return .init(resize: CGSize(width: side, height: side)) }
+        }
+        #endif
+        return .init(resize: CGSize(width: 512, height: 512))
     }
 
     /// Generate once against a fresh session, outside the conversation. Used by
@@ -250,8 +284,9 @@ actor InferenceEngine {
                         }
                     }
                     if recordInHistory {
-                        self.history.append(.user(prompt))
+                        self.history.append(.user(prompt, images: images))
                         self.history.append(.assistant(reply))
+                        if !images.isEmpty { self.conversationHasImage = true }
                         await self.recountContext()
                     }
                     self.finishGeneration(loaded)
@@ -262,7 +297,8 @@ actor InferenceEngine {
                     if recordInHistory {
                         self.session = nil
                         if !reply.isEmpty {
-                            self.history.append(.user(prompt))
+                            self.history.append(.user(prompt, images: images))
+                            if !images.isEmpty { self.conversationHasImage = true }
                             self.history.append(.assistant(reply))
                             await self.recountContext()
                         }
@@ -286,6 +322,24 @@ actor InferenceEngine {
     func cancelGeneration() {
         generation?.cancel()
     }
+
+    #if DEBUG
+    /// A fingerprint of a picture after the model's own preprocessing, for
+    /// telling a random preprocessing fault from a random model fault.
+    func debugImageFingerprint(_ url: URL) async throws -> String {
+        guard let container else { throw EngineError.noModelLoaded }
+        return try await container.perform { context in
+            var input = UserInput(prompt: "Describe this.", images: [.url(url)])
+            input.processing = .init(resize: CGSize(width: 512, height: 512))
+            let prepared = try await context.processor.prepare(input: input)
+            guard let pixels = prepared.image?.pixels else { return "no pixels" }
+            let sum = pixels.sum().item(Float.self)
+            let magnitude = abs(pixels).sum().item(Float.self)
+            let finite = isNaN(pixels).any().item(Bool.self) ? "has NaN" : "finite"
+            return "shape=\(pixels.shape) sum=\(sum) abs=\(magnitude) \(finite) tokens=\(prepared.text.tokens.size)"
+        }
+    }
+    #endif
 
     // MARK: Context
 

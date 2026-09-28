@@ -16,8 +16,8 @@ nonisolated enum BackendKind: String, Codable, CaseIterable, Sendable {
 
     var summary: String {
         switch self {
-        case .lantern: "A model you download once and can read the numbers of. Any supported iPhone."
-        case .apple: "Apple's built-in model, about 3 billion parameters, no download. iPhone 15 Pro or later with Apple Intelligence on."
+        case .lantern: "A model you download once and can read the numbers of. Any supported \(Platform.product)."
+        case .apple: "Apple's built-in model, about 3 billion parameters, no download. \(Platform.appleRequirement) with Apple Intelligence on."
         }
     }
 }

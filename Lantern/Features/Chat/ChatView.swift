@@ -18,8 +18,8 @@ struct ChatView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                transcript
-                bottomBar
+                ChatTranscript(keyboardHeight: keyboard.height)
+                ChatBottomBar(draft: $draft, composing: $composing)
                     .padding(.bottom, keyboard.height)
             }
             .background(Theme.background.ignoresSafeArea())
@@ -69,8 +69,15 @@ struct ChatView: View {
         .sheet(isPresented: $showPersonas) { PersonaSheet() }
         .sheet(isPresented: $showSettings) { SettingsView() }
     }
+}
 
-    private var transcript: some View {
+/// The conversation itself, shared by the phone screen and the Mac window.
+struct ChatTranscript: View {
+    @Environment(AppState.self) private var app
+    /// Keeps the last message in view as the keyboard rises. Zero on the Mac.
+    var keyboardHeight: CGFloat = 0
+
+    var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: Theme.Space.m) {
@@ -106,13 +113,20 @@ struct ChatView: View {
             .onChange(of: app.streamingText) {
                 proxy.scrollTo("bottom")
             }
-            .onChange(of: keyboard.height) {
+            .onChange(of: keyboardHeight) {
                 proxy.scrollTo("bottom")
             }
         }
     }
+}
 
-    private var bottomBar: some View {
+/// Readouts, warnings and the composer, under the transcript on both platforms.
+struct ChatBottomBar: View {
+    @Environment(AppState.self) private var app
+    @Binding var draft: String
+    var composing: FocusState<Bool>.Binding
+
+    var body: some View {
         VStack(spacing: Theme.Space.s) {
             if let live = app.live {
                 LiveStrip(live: live)
@@ -143,7 +157,7 @@ struct ChatView: View {
                     .foregroundStyle(Theme.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Composer(draft: $draft, composing: $composing)
+            Composer(draft: $draft, composing: composing)
         }
         .padding(.horizontal, Theme.Space.l)
         .padding(.vertical, Theme.Space.s)
@@ -200,7 +214,7 @@ private struct EmptyChat: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
 
-            Text("No signal needed. Nothing leaves this phone.")
+            Text("No signal needed. Nothing leaves this \(Platform.device).")
                 .font(.caption)
                 .foregroundStyle(Theme.muted)
         }

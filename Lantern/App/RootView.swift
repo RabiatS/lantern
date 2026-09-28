@@ -21,7 +21,11 @@ struct RootView: View {
                 if app.showWelcome {
                     WelcomeView().transition(.opacity)
                 } else {
+                    #if os(macOS)
+                    MacChatView().transition(.opacity)
+                    #else
                     ChatView().transition(.opacity)
+                    #endif
                 }
             }
         }
