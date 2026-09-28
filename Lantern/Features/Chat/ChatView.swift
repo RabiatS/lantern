@@ -13,14 +13,20 @@ struct ChatView: View {
     @State private var showHistory = false
     @State private var showPersonas = false
     @State private var showSettings = false
+    @State private var keyboard = KeyboardObserver()
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 transcript
                 bottomBar
+                    .padding(.bottom, keyboard.height)
             }
             .background(Theme.background.ignoresSafeArea())
+            // Keyboard avoidance is done by hand, see KeyboardObserver.
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+            .onAppear { keyboard.start() }
+            .onDisappear { keyboard.stop() }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Theme.background, for: .navigationBar)
@@ -98,6 +104,9 @@ struct ChatView: View {
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom") }
             }
             .onChange(of: app.streamingText) {
+                proxy.scrollTo("bottom")
+            }
+            .onChange(of: keyboard.height) {
                 proxy.scrollTo("bottom")
             }
         }
