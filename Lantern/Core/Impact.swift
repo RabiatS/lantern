@@ -41,6 +41,15 @@ final class Impact {
         }
     }
 
+    #if DEBUG
+    func seedPreview(replies: Int, tokens: Int, seconds: Double, characters: Int) {
+        self.replies = replies
+        self.tokens = tokens
+        self.generationSeconds = seconds
+        self.charactersKeptOnPhone = characters
+    }
+    #endif
+
     // MARK: Estimates, with the assumptions in the open
 
     /// Energy a data-centre reply costs, in watt-hours. Published estimates for

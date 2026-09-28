@@ -168,6 +168,27 @@ written to `Documents/Diagnostics/hangs.jsonl` with the engine state and
 whether a reply or a compaction was running. It exists because "it freezes
 sometimes" needs a timestamp before it can be fixed.
 
+**Vision** reuses everything. A catalog entry carries a `kind`; vision entries
+load through `VLMModelFactory` instead of `LLMModelFactory` and the same
+`ChatSession` accepts an image with a turn. The session's processing step
+resizes pictures to 512 on the long side before the model sees them, which
+bounds their token cost. `ImageStore` keeps the JPEG next to the conversation
+at 1024 pixels and purges it with the chat. Tokens per image vary by model:
+Qwen2-VL uses 14 pixel patches merged two by two, so a 512 by 512 picture is
+about 330 tokens; SmolVLM pixel-shuffles by four for a similar count.
+
+**PictureMaker** draws with SD-Turbo through Apple's MLX Stable Diffusion
+library. Two tricks make it fit. First, the library resolves weights by the
+SD 2.1 base preset's repository id and file names, and SD-Turbo shares that
+architecture, so Lantern downloads Stability's open SD-Turbo half-precision
+files (verified by checksum like everything else) and stores them under the
+base preset's names in a Hub-shaped directory the library can read. Second,
+on 6 GB phones the loader quantises the UNet to 4 bits and the maker discards
+the networks after each picture; on 8 GB and up it keeps them. The chat model
+is unloaded before drawing starts, because the two do not fit together. Four
+steps, no classifier-free guidance, 64 by 64 latents, which is what the turbo
+model was trained for.
+
 **AppleEngine** wraps the Foundation Models framework behind the same
 `GenerationEvent` stream as the MLX engine. A session is rebuilt from the
 message list whenever the conversation changes, using a `Transcript` of

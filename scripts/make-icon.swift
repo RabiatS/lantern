@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 let size = 1024.0
 let space = CGColorSpace(name: CGColorSpace.sRGB)!
 let ctx = CGContext(data: nil, width: Int(size), height: Int(size), bitsPerComponent: 8, bytesPerRow: 0,
-                    space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                    space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
 
 func rgb(_ r: Double, _ g: Double, _ b: Double, _ a: Double = 1) -> CGColor {
     CGColor(colorSpace: space, components: [r, g, b, a])!

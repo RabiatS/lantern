@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Observation
 
@@ -26,6 +27,14 @@ final class AppState {
     /// The "did you know" line for the current empty chat. Re-rolled per new chat.
     private(set) var fact = Facts.random()
     private let conversations: ConversationStore
+    let images = ImageStore()
+    /// The picture waiting in the composer, if any.
+    var pendingImage: CGImage?
+    let pictures = PictureStore()
+    let maker = PictureMaker()
+    /// "Step 2 of 4" while a picture is being drawn.
+    private(set) var pictureProgress: String?
+    private var drawing: Task<Void, Never>?
 
     private(set) var device: DeviceReport
     private(set) var engineState: InferenceEngine.State = .empty
@@ -57,7 +66,54 @@ final class AppState {
     private(set) var isCompacting = false
 
     /// Anything that has the model's attention: a reply, a benchmark, a compaction.
-    var isBusy: Bool { isGenerating || benchmark != nil || isCompacting }
+    var isBusy: Bool { isGenerating || benchmark != nil || isCompacting || drawing != nil }
+
+    var canMakePictures: Bool { pictures.isInstalled && PictureModel.verdict(report: device).allowsDownload }
+
+    /// Draw a picture from the text and drop it into the chat as a reply.
+    func makePicture(_ text: String) {
+        let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty, !isBusy, pictures.isInstalled else { return }
+        lastError = nil
+        current.messages.append(ChatMessage(role: .user, text: "Draw: \(prompt)"))
+        persist()
+        pictureProgress = "Loading the picture model"
+        let root = pictures.root
+        let tier = device.tier
+        drawing = Task {
+            defer {
+                drawing = nil
+                pictureProgress = nil
+            }
+            do {
+                // The chat model steps aside so the picture model has the memory.
+                await engine.unload()
+                await syncEngineState()
+                for try await event in await maker.make(prompt: prompt, root: root, tier: tier) {
+                    switch event {
+                    case .step(let index, let total):
+                        pictureProgress = "Drawing, step \(index) of \(total)"
+                    case .decoding:
+                        pictureProgress = "Finishing the picture"
+                    case .done(let image, let seconds):
+                        let name = try images.save(image)
+                        current.messages.append(ChatMessage(
+                            role: .assistant,
+                            text: String(format: "Drawn on this phone in %.0f seconds.", seconds),
+                            imageName: name))
+                        persist()
+                    }
+                }
+            } catch is CancellationError {
+            } catch {
+                lastError = "The picture could not be drawn: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func stopDrawing() {
+        drawing?.cancel()
+    }
 
     /// The welcome screen shows until a model is on the phone and the person
     /// has tapped Start once. Deleting every model brings it back.
@@ -66,7 +122,11 @@ final class AppState {
 
     /// `--preview` on the command line seeds a sample chat so the screens can be
     /// looked at in the simulator, where no model can run.
+    #if DEBUG
     let isPreview = CommandLine.arguments.contains("--preview")
+    #else
+    let isPreview = false
+    #endif
 
     func finishWelcome() {
         welcomed = true
@@ -88,6 +148,7 @@ final class AppState {
         self.current = Conversation(modelId: entry.id)
         conversations.purgeExpired()
         self.history = conversations.loadAll()
+        images.purge(keeping: Set(self.history.flatMap { $0.messages.compactMap(\.imageName) }))
         if isPreview { seedPreview() }
         wirePressure()
         pressure.start()
@@ -102,8 +163,17 @@ final class AppState {
         }
     }
 
+    #if DEBUG
     private func seedPreview() {
         persona = .firstAid
+        device = DeviceReport(
+            physicalMemory: 12_294_000_000, availableMemory: 6_388_000_000, freeDisk: 729 << 30,
+            hasMetal: true, isSimulator: false, tier: .pro, thermalState: .nominal,
+            gpuName: "Apple A19 Pro GPU", gpuFamily: "Apple 9 (A17 Pro, M3 and newer)")
+        appleStatus = .available
+        store.seedPreviewInstalled([ModelCatalog.qwen2_5_1_5B, ModelCatalog.llama3_2_1B, ModelCatalog.qwen2VL2B])
+        selectedEntry = ModelCatalog.qwen2_5_1_5B
+        impact.seedPreview(replies: 214, tokens: 18_930, seconds: 231, characters: 96_400)
         var chat = Conversation(modelId: ModelCatalog.qwen2_5_1_5B.id)
         chat.messages = [
             ChatMessage(role: .user, text: "Someone has a deep cut on their hand that will not stop bleeding."),
@@ -123,10 +193,14 @@ final class AppState {
                          memory: MemorySnapshot(mlxActive: 760_000_000, mlxCache: 0, mlxPeak: 790_000_000,
                                                 available: 6_100_000_000, thermalState: .nominal))
     }
+    #else
+    private func seedPreview() {}
+    #endif
 
     // MARK: Device gate
 
     func refreshDevice() {
+        guard !isPreview else { return }
         device = DeviceCapability.current()
         appleStatus = AppleIntelligence.status()
     }
@@ -145,6 +219,15 @@ final class AppState {
     var offeredEntries: [ModelEntry] {
         ModelCatalog.entries(for: device.tier)
     }
+
+    /// The model that would look at a picture: the selected one if it can, else
+    /// the first installed vision model. Nil means nothing on the phone can.
+    var visionEntry: ModelEntry? {
+        if selectedEntry.seesPhotos, store.installedModel(for: selectedEntry) != nil { return selectedEntry }
+        return ModelCatalog.vision.first { store.installedModel(for: $0) != nil }
+    }
+
+    var canLook: Bool { visionEntry != nil && !usingApple }
 
     /// The thing to check before leaving Wi-Fi: is the chosen model on the phone.
     /// Apple's model counts once it is available; iOS keeps it resident.
@@ -245,6 +328,7 @@ final class AppState {
         reply?.cancel()
         for conversation in history { try? conversations.delete(conversation.id) }
         history.removeAll()
+        images.purge(keeping: [])
         current = Conversation(modelId: selectedEntry.id)
         fact = Facts.random()
         resetEngineConversation()
@@ -273,6 +357,7 @@ final class AppState {
 
     func delete(_ conversation: Conversation) {
         try? conversations.delete(conversation.id)
+        for name in conversation.messages.compactMap(\.imageName) { images.delete(name) }
         history.removeAll { $0.id == conversation.id }
         if current.id == conversation.id { newConversation() }
     }
@@ -288,10 +373,32 @@ final class AppState {
     // MARK: Sending
 
     func send(_ text: String) {
-        let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let picture = pendingImage
+        if picture != nil, prompt.isEmpty { prompt = "What is in this picture?" }
         guard !prompt.isEmpty, !isBusy else { return }
         lastError = nil
-        current.messages.append(ChatMessage(role: .user, text: prompt))
+        var imageName: String?
+        var imageURL: URL?
+        if let picture {
+            // A picture needs a model that can see. Switch to one if the
+            // selected model cannot, or say so if none is on the phone.
+            guard let vision = visionEntry else {
+                lastError = "Download a model that sees photos (Settings, Models) to ask about a picture."
+                return
+            }
+            if vision != selectedEntry { select(vision) }
+            do {
+                let name = try images.save(picture)
+                imageName = name
+                imageURL = images.url(for: name)
+            } catch {
+                lastError = "The picture could not be saved."
+                return
+            }
+            pendingImage = nil
+        }
+        current.messages.append(ChatMessage(role: .user, text: prompt, imageName: imageName))
         let assistant = ChatMessage(role: .assistant, text: "")
         current.messages.append(assistant)
         persist()
@@ -319,9 +426,10 @@ final class AppState {
                 // Grounding: the safety personas answer from the bundled guide.
                 // Retrieval is a few milliseconds of BM25 plus one sentence
                 // embedding, off the main actor.
-                var modelPrompt = prompt
+                let question = prompt
+                var modelPrompt = question
                 if let guide, let library {
-                    let hits = await Task.detached { library.retrieve(prompt, in: guide) }.value
+                    let hits = await Task.detached { library.retrieve(question, in: guide) }.value
                     if !hits.isEmpty {
                         modelPrompt = GuideLibrary.groundedPrompt(question: prompt, passages: hits)
                         update(assistant.id) { $0.sources = hits.map(\.passage.title) }
@@ -333,7 +441,7 @@ final class AppState {
                 var lastText = started
                 var lastLive = started
                 live = LiveStats(tokens: 0, elapsed: 0, tokensPerSecond: 0, memory: await Self.snapshotOffMain())
-                let events = usingApple ? await apple.stream(modelPrompt) : await engine.stream(modelPrompt)
+                let events = usingApple ? await apple.stream(modelPrompt) : await engine.stream(modelPrompt, imageURL: imageURL)
                 for try await event in events {
                     switch event {
                     case .token(let piece):
@@ -491,8 +599,8 @@ final class AppState {
                     modelId: usingApple ? "apple/foundation-model" : selectedEntry.id,
                     tier: device.tier,
                     loadSeconds: usingApple ? 0 : lastLoadSeconds
-                ) { [weak self] message in
-                    Task { @MainActor in self?.benchmarkProgress = message }
+                ) { message in
+                    Task { @MainActor in self.benchmarkProgress = message }
                 }
                 lastBenchmark = report
                 benchmarks[kind] = report

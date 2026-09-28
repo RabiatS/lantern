@@ -51,6 +51,34 @@ The same target builds for iPhone, iPad and Mac. On a Mac the model runs on
 the same MLX code with far more memory to spare, so every model in the catalog
 is offered cleanly.
 
+## Looking at pictures
+
+Two models in the catalog see photos: SmolVLM 500M (287 MB, any supported
+phone) and Qwen2-VL 2B (1.25 GB, 6 GB phones and up). The camera button in
+the composer takes or picks a picture; if the model in use cannot see, Lantern
+switches to one that can, or says which to download. Pictures are downscaled
+to 1024 pixels for storage and 512 for the model, so a photo costs a few
+hundred tokens of context, and they are deleted with their chat. Point it at a
+menu abroad, a warning label, a breadboard, a trail sign.
+
+## Drawing pictures
+
+Lantern can draw, too. The model is Stability's SD-Turbo, a distilled Stable
+Diffusion 2.1 that makes a 512 pixel picture in four steps instead of fifty,
+run through Apple's MLX port of Stable Diffusion. Its repository is open, so
+the app can download it for anyone; the half-precision files are 2.6 GB. Type
+a description, then choose "Draw a picture from this text" from the camera
+button. The chat model steps aside while it runs. On 8 GB phones the networks
+stay loaded between pictures; on 6 GB phones the UNet is compressed to 4 bits
+and everything is unloaded after each picture, at about a minute each. Under
+6 GB it is not offered.
+
+Making video is not realistic on a phone yet and is out of scope.
+
+The Stable Diffusion code lives in `Packages/StableDiffusionKit`, a copy of
+Apple's library from mlx-swift-examples under its MIT licence, because the
+upstream manifest declares an iOS version MLX no longer supports.
+
 ## Apple Intelligence
 
 On an iPhone 15 Pro or later with Apple Intelligence on, iOS keeps a built-in

@@ -116,6 +116,16 @@ final class ModelStore {
         }
     }
 
+    #if DEBUG
+    /// Pretend these models are on the phone, for screenshots in the simulator.
+    func seedPreviewInstalled(_ entries: [ModelEntry]) {
+        for entry in entries {
+            status[entry.id] = .installed(InstalledModel(
+                entryId: entry.id, revision: "preview", files: [], totalBytes: entry.approximateBytes, installedAt: Date()))
+        }
+    }
+    #endif
+
     // MARK: Install
 
     func install(_ entry: ModelEntry) {

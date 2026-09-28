@@ -9,9 +9,13 @@ struct RootView: View {
     @Environment(AppState.self) private var app
 
     private var forced: String? {
+        #if DEBUG
         guard let index = CommandLine.arguments.firstIndex(of: "--screen"),
               index + 1 < CommandLine.arguments.count else { return nil }
         return CommandLine.arguments[index + 1]
+        #else
+        return nil
+        #endif
     }
 
     var body: some View {

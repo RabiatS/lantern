@@ -22,6 +22,7 @@ struct SettingsView: View {
                 impactSection
                 phoneSection
                 modelsSection
+                pictureSection
                 benchmarkSection
                 diagnosticsSection
                 aboutSection
@@ -167,6 +168,61 @@ struct SettingsView: View {
         .listRowBackground(Theme.surface)
     }
 
+    // MARK: Pictures
+
+    private var pictureSection: some View {
+        let verdict = PictureModel.verdict(report: app.device)
+        return Section {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
+                HStack(spacing: Theme.Space.s) {
+                    StatusLight(verdict: verdict)
+                    Text(PictureModel.displayName).font(.body.weight(.semibold))
+                    Chip(text: "draws", systemImage: "paintbrush")
+                    Spacer()
+                    Text(PictureModel.totalBytes.byteText).font(Theme.readout(.caption)).foregroundStyle(Theme.muted)
+                }
+                switch verdict {
+                case .go: EmptyView()
+                case .caution(let why): Text(why).font(.caption).foregroundStyle(Theme.warn)
+                case .no(let why): Text(why).font(.caption).foregroundStyle(Theme.danger)
+                }
+                switch app.pictures.status {
+                case .installed:
+                    HStack {
+                        Text("Installed").font(.caption).foregroundStyle(Theme.muted)
+                        Spacer()
+                        Button("Delete", role: .destructive) { try? app.pictures.remove() }
+                            .buttonStyle(.bordered).font(.subheadline)
+                    }
+                case .notInstalled:
+                    Button("Download") { app.pictures.wifiOnly = app.store.wifiOnly; app.pictures.install() }
+                        .buttonStyle(.bordered).font(.subheadline)
+                        .disabled(!verdict.allowsDownload)
+                case .failed(let why):
+                    Text(why).font(.caption).foregroundStyle(Theme.danger)
+                    Button("Try again") { app.pictures.install() }.buttonStyle(.bordered).font(.subheadline)
+                case .downloading(let written, let total, _):
+                    ProgressView(value: Double(written), total: Double(max(total, 1))).tint(Theme.accent)
+                    HStack {
+                        Text("\(written.byteText) of \(total.byteText)").font(Theme.readout(.caption)).foregroundStyle(Theme.muted)
+                        Spacer()
+                        Button("Cancel", role: .cancel) { app.pictures.cancel() }.font(.caption)
+                    }
+                case .waitingForNetwork:
+                    Label("Waiting for Wi-Fi…", systemImage: "wifi.slash").font(.caption).foregroundStyle(Theme.warn)
+                case .verifying:
+                    Label("Verifying…", systemImage: "checkmark.shield").font(.caption).foregroundStyle(Theme.muted)
+                }
+            }
+            .padding(.vertical, Theme.Space.xs)
+        } header: {
+            Text("Drawing pictures")
+        } footer: {
+            Text("Stability's SD-Turbo draws a 512 pixel picture in four steps on this phone. It is the heaviest thing in the app: the chat model steps aside while it runs, and on 6 GB phones it is compressed and unloaded after each picture. Type a description, then choose \"Draw a picture from this text\" from the camera button.")
+        }
+        .listRowBackground(Theme.surface)
+    }
+
     // MARK: Benchmark
 
     private var benchmarkSection: some View {
@@ -267,6 +323,7 @@ private struct ModelRow: View {
             HStack(spacing: Theme.Space.s) {
                 StatusLight(verdict: verdict)
                 Text(entry.displayName).font(.body.weight(.semibold))
+                if entry.seesPhotos { Chip(text: "sees photos", systemImage: "eye") }
                 if app.selectedEntry == entry, app.store.installedModel(for: entry) != nil {
                     Chip(text: "in use")
                 }
