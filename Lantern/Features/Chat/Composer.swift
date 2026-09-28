@@ -2,6 +2,10 @@ import PhotosUI
 import SwiftUI
 
 /// The input row: a picture button, the text, send or stop.
+///
+/// No "Done" bar over the keyboard: it stacked under the send arrow and read
+/// as two buttons for one job. Swiping down on the conversation, or sending,
+/// puts the keyboard away.
 struct Composer: View {
     @Environment(AppState.self) private var app
     @Binding var draft: String
@@ -66,12 +70,6 @@ struct Composer: View {
             }
             .ignoresSafeArea()
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { composing.wrappedValue = false }
-            }
-        }
         #endif
     }
 
@@ -132,5 +130,6 @@ struct Composer: View {
     private func send() {
         app.send(draft)
         draft = ""
+        composing.wrappedValue = false
     }
 }
