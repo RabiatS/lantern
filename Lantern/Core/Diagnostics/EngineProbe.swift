@@ -13,7 +13,62 @@ import AppKit
 /// in the same conversation. The path must be readable by the sandboxed app,
 /// such as a file in its own container.
 enum EngineProbe {
+    @MainActor
+    private static func quit() {
+        #if os(macOS)
+        NSApp.terminate(nil)
+        #else
+        exit(0)
+        #endif
+    }
+
     static func runIfRequested(app: AppState) {
+        if let repo = LaunchArguments.value(for: "add-and-ask") {
+            // Add a custom model, download it, ask one question, then remove it.
+            Task { @MainActor in
+                func log(_ text: String) { FileHandle.standardError.write((text + "\n").data(using: .utf8)!) }
+                do {
+                    let entry = try await CustomModelInspector.inspect(repo)
+                    try app.addCustomModel(entry)
+                    log("probe: added \(entry.id), in catalog: \(ModelCatalog.entry(id: entry.id) != nil)")
+                    app.store.install(entry)
+                    while app.store.status(for: entry).isBusy || app.store.status(for: entry) == .notInstalled {
+                        try await Task.sleep(for: .seconds(1))
+                        if case .failed = app.store.status(for: entry) { break }
+                    }
+                    log("probe: store status \(app.store.status(for: entry))")
+                    app.select(entry)
+                    app.newConversation()
+                    app.send(LaunchArguments.value(for: "ask") ?? "Say hello in one short sentence.")
+                    try await Task.sleep(for: .milliseconds(200))
+                    while app.isGenerating { try await Task.sleep(for: .milliseconds(100)) }
+                    log("probe: < \(app.current.messages.last?.text.debugDescription ?? "nil") error=\(app.lastError ?? "none")")
+                    app.delete(app.current)
+                    app.removeCustomModel(entry)
+                    try await Task.sleep(for: .seconds(2))
+                    log("probe: removed, in catalog: \(ModelCatalog.entry(id: entry.id) != nil), files: \(FileManager.default.fileExists(atPath: app.store.directory(for: entry).path))")
+                } catch {
+                    log("probe: add-and-ask error \(error.localizedDescription)")
+                }
+                quit()
+            }
+            return
+        }
+        if let repos = LaunchArguments.value(for: "inspect") {
+            Task { @MainActor in
+                func log(_ text: String) { FileHandle.standardError.write((text + "\n").data(using: .utf8)!) }
+                for repo in repos.split(separator: ",").map(String.init) {
+                    do {
+                        let entry = try await CustomModelInspector.inspect(repo)
+                        log("probe: inspect \(repo) -> \(entry.kind) \(entry.family) \(entry.parameterBillions)B \(entry.approximateBytes.byteText) kv=\(entry.kvBytesPerToken) tier=\(entry.requiredTier) eos=\(entry.extraEOSTokens) verdict=\(CustomModelInspector.fits(entry, on: app.device))")
+                    } catch {
+                        log("probe: inspect \(repo) -> refused: \(error.localizedDescription)")
+                    }
+                }
+                quit()
+            }
+            return
+        }
         #if os(macOS)
         if LaunchArguments.has("metrics") {
             Task { @MainActor in
@@ -22,7 +77,7 @@ enum EngineProbe {
                 metrics.start()
                 try? await Task.sleep(for: .seconds(3.5))
                 for sample in metrics.samples { log("probe: metrics \(sample)") }
-                NSApp.terminate(nil)
+                quit()
             }
             return
         }
@@ -30,11 +85,7 @@ enum EngineProbe {
         if let backend = LaunchArguments.value(for: "bench") {
             Task { @MainActor in
                 await bench(app: app, backend: backend)
-                #if os(macOS)
-                NSApp.terminate(nil)
-                #else
-                exit(0)
-                #endif
+                quit()
             }
             return
         }

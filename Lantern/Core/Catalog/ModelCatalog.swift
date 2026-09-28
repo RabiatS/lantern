@@ -189,10 +189,14 @@ nonisolated enum ModelCatalog {
         kind: .vision
     )
 
-    static let all: [ModelEntry] = [llama3_2_1B, qwen2_5_1_5B, llama3_2_3B, phi3_5Mini, llama3_1_8B, smolVLM500M, qwen2VL2B]
+    /// The models Lantern ships knowing about, sized and tiered by hand.
+    static let builtIn: [ModelEntry] = [llama3_2_1B, qwen2_5_1_5B, llama3_2_3B, phi3_5Mini, llama3_1_8B, smolVLM500M, qwen2VL2B]
+
+    /// The built-in models, then any a person added from Hugging Face.
+    static var all: [ModelEntry] { builtIn + CustomModels.entries }
 
     /// Models that can look at a picture, in catalog order.
-    static let vision: [ModelEntry] = all.filter { $0.kind == .vision }
+    static var vision: [ModelEntry] { all.filter { $0.kind == .vision } }
 
     static let defaultEntry = llama3_2_1B
 

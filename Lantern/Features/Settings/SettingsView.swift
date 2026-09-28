@@ -187,8 +187,16 @@ struct SettingsView: View {
             if Platform.hasCellular {
                 Toggle("Download on Wi-Fi only", isOn: $store.wifiOnly)
             }
-            ForEach(ModelCatalog.all) { entry in
+            ForEach(ModelCatalog.builtIn + app.customModels) { entry in
                 ModelRow(entry: entry)
+            }
+            if app.showsAdvanced {
+                NavigationLink {
+                    AddModelView()
+                } label: {
+                    Label("Add a model from Hugging Face", systemImage: "plus.circle")
+                        .foregroundStyle(Theme.ink)
+                }
             }
         } header: {
             Text("Models")
@@ -324,6 +332,8 @@ struct SettingsView: View {
             } message: {
                 Text("Removes every chat from this \(Platform.device) now.")
             }
+            @Bindable var app = app
+            Toggle("Show advanced options", isOn: $app.showsAdvanced)
             readout("Version", Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
             Link("Source on GitHub", destination: URL(string: "https://github.com/RabiatS/lantern")!)
         } header: {
@@ -357,6 +367,7 @@ private struct ModelRow: View {
                 if app.selectedEntry == entry, app.store.installedModel(for: entry) != nil {
                     Chip(text: "in use")
                 }
+                if app.customModels.contains(entry) { Chip(text: "custom", systemImage: "wrench.and.screwdriver") }
                 Spacer()
                 Text(entry.approximateBytes.byteText)
                     .font(Theme.readout(.caption))
@@ -374,14 +385,22 @@ private struct ModelRow: View {
                         Button("Use") { app.select(entry) }
                     }
                     Button("Delete", role: .destructive) { app.removeModel(entry) }
+                    if app.customModels.contains(entry) {
+                        Button("Remove from list", role: .destructive) { app.removeCustomModel(entry) }
+                    }
                 }
                 .buttonStyle(.bordered)
                 .font(.subheadline)
             case .notInstalled:
-                Button("Download") { app.store.install(entry) }
-                    .buttonStyle(.bordered)
-                    .font(.subheadline)
-                    .disabled(!verdict.allowsDownload)
+                HStack {
+                    Button("Download") { app.store.install(entry) }
+                        .disabled(!verdict.allowsDownload)
+                    if app.customModels.contains(entry) {
+                        Button("Remove from list", role: .destructive) { app.removeCustomModel(entry) }
+                    }
+                }
+                .buttonStyle(.bordered)
+                .font(.subheadline)
             case .failed(let why):
                 Text(why).font(.caption).foregroundStyle(Theme.danger)
                 Button("Try again") { app.store.install(entry) }

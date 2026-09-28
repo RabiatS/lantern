@@ -264,6 +264,34 @@ final class AppState {
         return ModelCatalog.entry(id: id)
     }
 
+    /// Models added from Hugging Face, observed so the lists update.
+    private(set) var customModels: [ModelEntry] = CustomModels.entries
+
+    /// Show the options meant for experienced users, such as adding a model.
+    var showsAdvanced = UserDefaults.standard.bool(forKey: "lantern.advanced") {
+        didSet { UserDefaults.standard.set(showsAdvanced, forKey: "lantern.advanced") }
+    }
+
+    func addCustomModel(_ entry: ModelEntry) throws {
+        try CustomModels.add(entry)
+        customModels = CustomModels.entries
+        store.refresh()
+    }
+
+    /// Delete its files if it was downloaded, then take it off the list.
+    func removeCustomModel(_ entry: ModelEntry) {
+        if selectedEntry == entry { select(ModelCatalog.defaultEntry) }
+        Task {
+            if await engine.loadedEntry == entry { await engine.unload() }
+            if store.installedModel(for: entry) != nil {
+                do { try store.remove(entry) } catch { lastError = error.localizedDescription }
+            }
+            try? CustomModels.remove(entry)
+            customModels = CustomModels.entries
+            await syncEngineState()
+        }
+    }
+
     func removeModel(_ entry: ModelEntry) {
         Task {
             if await engine.loadedEntry == entry { await engine.unload() }
