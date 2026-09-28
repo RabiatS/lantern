@@ -2,21 +2,12 @@ import SwiftUI
 
 /// Welcome until a model is on the phone, then the chat.
 ///
-/// `--screen <name>` on the command line opens one screen directly, for
-/// screenshots in the simulator: welcome, chat, personas, history, settings,
-/// transparency.
+/// `--screen=<name>` on the command line opens one screen directly, for
+/// screenshots: welcome, chat, personas, history, settings, transparency.
 struct RootView: View {
     @Environment(AppState.self) private var app
 
-    private var forced: String? {
-        #if DEBUG
-        guard let index = CommandLine.arguments.firstIndex(of: "--screen"),
-              index + 1 < CommandLine.arguments.count else { return nil }
-        return CommandLine.arguments[index + 1]
-        #else
-        return nil
-        #endif
-    }
+    private var forced: String? { LaunchArguments.value(for: "screen") }
 
     var body: some View {
         Group {

@@ -122,11 +122,7 @@ final class AppState {
 
     /// `--preview` on the command line seeds a sample chat so the screens can be
     /// looked at in the simulator, where no model can run.
-    #if DEBUG
-    let isPreview = CommandLine.arguments.contains("--preview")
-    #else
-    let isPreview = false
-    #endif
+    let isPreview = LaunchArguments.has("preview")
 
     func finishWelcome() {
         welcomed = true
